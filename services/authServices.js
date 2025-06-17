@@ -3,14 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const prisma = require(`../db/database.prisma`)
 
-// const user = {
-//   id: 1,
-//   name: 'Pepe Pérez',
-//   role: 'admin',
-//   email: 'usuario@example.com',
-//   password: '123456', // En la práctica esto estaría hasheado
-//   profilePic: 'https://example.com/profile.jpg', // URL de la imagen de perfil
-// };
+
 
 const loginUser = async (email, password) => {
    const user = await prisma['user'].findUnique({ where: { email } });
