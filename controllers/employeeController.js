@@ -1,4 +1,4 @@
-const employeeServices = require('../services/employeesServices');
+const employeeServices = require('../services/employeeServices');
 
 
 const createEmployee = async (req, res) => {
@@ -13,9 +13,11 @@ const createEmployee = async (req, res) => {
 };
 
 const getAllEmployees = async (req, res) => {
+  
   try {
     const result = await employeeServices.getAll();
     res.json(result);
+    console.log('Empleados Cargados:', result);
   } catch (error) {
     res.status(401).json({ message: error.message });
   }
