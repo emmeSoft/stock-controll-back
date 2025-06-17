@@ -16,7 +16,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 
 app.use("/api/clients", clientRoutes);
-app.use("/api/employees", employeesRoutes)
+app.use("/api/user", employeesRoutes)
 
 app.listen(3000, () => {
   console.log('Servidor corriendo en http://localhost:3000');
