@@ -24,6 +24,16 @@ const getAll = async () => {
     return response;
 }
 
-module.exports = { create, getAll };
+const getById = async (id) => {
+    console.log(`Fetching product with ID: ${id}`);
+    const response = await prisma.product.findUnique({ where: { id: id } });
+    if (!response) {
+        throw new Error(`Product with ID ${id} not found`);
+    }
+    console.log('Product found:');
+    return response;
+}
+
+module.exports = { create, getAll, getById };
 
 

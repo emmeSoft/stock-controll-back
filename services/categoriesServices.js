@@ -15,7 +15,17 @@ const getAll = async () => {
     return response;
 }
 
-module.exports = { create, getAll };
+const getById = async (id) => {
+    console.log(`Fetching category with ID: ${id}`);
+    const response = await prisma.categories.findUnique({ where: { id: id } });
+    if (!response) {
+        throw new Error(`Category with ID ${id} not found`);
+    }
+    console.log('Category found:');
+    return response;
+}
+
+module.exports = { create, getAll, getById };
 
 
     

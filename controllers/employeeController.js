@@ -23,4 +23,15 @@ const getAllEmployees = async (req, res) => {
   }
 };
 
-module.exports = { createEmployee, getAllEmployees };
+const getEmployeeById = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await employeeServices.getById(id);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ message: error.message });
+  }
+};
+
+module.exports = { createEmployee, getAllEmployees, getEmployeeById };
