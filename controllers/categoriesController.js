@@ -21,4 +21,15 @@ const getAllCategories = async (req, res) => {
   }
 };
 
-module.exports = { createCategories, getAllCategories };
+const getCategoryById = async (req, res) => {
+  const { id } = req.params;  
+
+  try {
+    const result = await categoriesServices.getById(id);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ message: error.message });
+  }
+};
+
+module.exports = { createCategories, getAllCategories, getCategoryById };

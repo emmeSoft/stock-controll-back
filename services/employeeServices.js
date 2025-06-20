@@ -15,6 +15,16 @@ const getAll = async () => {
     return response;
 }
 
-module.exports = { create, getAll };
+const getById = async (id) => {
+    console.log(`Trayendo empleado con ID: ${id}`);
+    const response = await prisma.user.findUnique({ where: { id: id } });
+    if (!response) {
+        throw new Error(`Empleado con ID ${id} no encontrado`);
+    }
+    console.log('Empleado encontrado:');
+    return response;
+}
+
+module.exports = { create, getAll, getById };
 
 

@@ -15,6 +15,15 @@ const getAll = async () => {
     return response;
 }
 
-module.exports = { create, getAll };
+const getById = async (id) => {
+    console.log(`Fetching supplier with ID: ${id}`);
+    const response = await prisma.suplier.findUnique({ where: { id: id } });
+    if (!response) {
+        throw new Error(`Supplier with ID ${id} not found`);
+    }
+    console.log('Supplier found:');
+    return response;
+}
 
+module.exports = { create, getAll, getById };
 
