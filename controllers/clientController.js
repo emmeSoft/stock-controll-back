@@ -21,5 +21,15 @@ const getAllClients = async (req, res) => {
     res.status(401).json({ message: error.message });
   }
 };
+const getClientDetails = async (req, res) => {
+  const { id } = req.params;
 
-module.exports = { createClient, getAllClients };
+  try {
+    const result = await clientServices.getById(id);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ message: error.message });
+  }
+};
+
+module.exports = { createClient, getAllClients, getClientDetails };

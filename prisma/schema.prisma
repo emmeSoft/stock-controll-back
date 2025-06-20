@@ -43,7 +43,8 @@ model client {
   payments    payment[]
 }
 
-model suplier {
+  model suplier { 
+    // debo cambiar el nombre a supplier 
   id          String   @id @default(cuid())
   email       String?
   firstName   String?
