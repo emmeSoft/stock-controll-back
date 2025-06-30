@@ -32,4 +32,38 @@ const getClientDetails = async (req, res) => {
   }
 };
 
-module.exports = { createClient, getAllClients, getClientDetails };
+const updateClient = async (req, res) => {
+  const { id } = req.params;
+  const dataClient = req.body;
+  try {
+    const result = await clientServices.update(id, dataClient);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ message: error.message });
+  }
+}
+
+const disableClient = async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    const result = await clientServices.disable(id);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ message: error.message });
+  }
+};
+
+const enableClient = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await clientServices.enable(id);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ message: error.message });
+  }
+};
+
+// const disableClient = async (req, res) => { const { id } = req.params; try { const result = await clientServices.disable(id); res.json(result); } catch (error) { res.status(401).json({ message: error.message }); } }
+
+module.exports = { createClient, getAllClients, getClientDetails, updateClient, disableClient, enableClient };
