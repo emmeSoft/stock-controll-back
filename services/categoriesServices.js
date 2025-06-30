@@ -25,6 +25,16 @@ const getById = async (id) => {
     return response;
 }
 
+const update = async (id, dataCategory) => {
+    console.log(`Updating category with ID: ${id}`);
+    const response = await prisma.categories.update({
+        where: { id: id },
+        data: dataCategory
+    });
+    console.log('Category updated:');
+    return response;
+}
+
 module.exports = { create, getAll, getById };
 
 

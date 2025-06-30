@@ -24,7 +24,6 @@ app.use("/api/suppliers", suppliersRoutes);
 app.use("/api/categories", categoriesRoutes); // creo que las categorias deberian tener un codigo unico de indentificacion que tambien deberia traerse desde la base de datos y mostrado al usuario (distinto al id de la categoria)
 app.use("/api/products", productsRoutes); // mismo comentario para los productos.
 
-
 app.listen(3000, () => {
   console.log('Servidor corriendo en http://localhost:3000');
 });
