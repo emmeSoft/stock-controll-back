@@ -25,7 +25,30 @@ const getById = async (id) => {
     return response;
 }
 
-module.exports = { create, getAll, getById };
+const update = async (id, dataCategory) => {
+    console.log(`Updating category with ID: ${id}`);
+    const response = await prisma.categories.update({
+        where: { id: id },
+        data: dataCategory
+    });
+    console.log('Category updated:');
+    return response;
+}
+
+const setActiveStatus = async (id, isActive) => {
+    console.log(`${isActive ? "Enabling" : "Disabling"} category with ID: ${id}`);
+    
+    const response = await prisma.categories.update({
+        where: { id },
+        data: { isActive }
+    });
+
+    console.log(`Category ${isActive ? "enabled" : "disabled"}:`);
+    return response;
+}   
+
+
+module.exports = { create, getAll, getById, update, setActiveStatus };
 
 
     
