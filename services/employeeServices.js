@@ -25,6 +25,32 @@ const getById = async (id) => {
     return response;
 }
 
-module.exports = { create, getAll, getById };
+const update = async (id, dataEmployee) => {
+    console.log(`actualizando empleado con ID: ${id}`);
+
+    const response = await prisma.user.update({
+        where: { id: id},
+        data: dataEmployee
+    });
+    console.log('Empleado Actualizado:');
+    return response;
+}
+
+const setActiveStatus = async (id, isActive) => {
+    console.log(`${isActive ? "Habilitando" : "Deshabilitando"} empleado con ID: ${id}`);
+
+    const response = await prisma.user.update({
+        where: { id },
+        data : { isActive } 
+    });
+
+    console.log (`Empleado ${ isActive ? "habilitado" : "deshabilitado"}`);
+
+    return response;
+}
+
+
+
+module.exports = { create, getAll, getById, update, setActiveStatus };
 
 

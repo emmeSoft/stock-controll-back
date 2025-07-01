@@ -7,7 +7,7 @@ router.post('/', clientController.createClient);
 router.get('/', clientController.getAllClients);
 router.get('/:id', clientController.getClientDetails);
 router.put('/:id', clientController.updateClient);
-router.put('/:id/disable', clientController.disableClient);
-router.put('/:id/enable', clientController.enableClient); 
+router.put('/:id/active', clientController.toggleActiveStatus);
+
 
 module.exports = router;

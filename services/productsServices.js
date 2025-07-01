@@ -34,6 +34,28 @@ const getById = async (id) => {
     return response;
 }
 
-module.exports = { create, getAll, getById };
+const update = async (id, dataProduct) => {
+    console.log(`Updating product with ID: ${id}`);
+    const response = await prisma.product.update({
+        where: { id: id },
+        data: {
+            ...dataProduct,
+            price: parseFloat(dataProduct.price),
+            stock: parseInt(dataProduct.stock),
+        }
+    });
+    console.log('Product updated successfully:');
+    return response;
+}
 
+const setActiveStatus = async (id, isActive) => {
+    console.log(`${isActive ? "Enabling" : "Disabling"} product with ID: ${id}`);
+    const response = await prisma.product.update({
+        where: { id },
+        data: { isActive }
+    });
+    console.log(`Product ${isActive ? "enabled" : "disabled"}:`);
+    return response;
+}
 
+module.exports = { create, getAll, getById, update, setActiveStatus };

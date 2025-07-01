@@ -25,5 +25,25 @@ const getById = async (id) => {
     return response;
 }
 
-module.exports = { create, getAll, getById };
+const update = async (id, dataSuppliers) => {
+    console.log(`Updating supplier with ID: ${id}`);
+    const response = await prisma.suplier.update({
+        where: { id: id },
+        data: dataSuppliers
+    });
+    console.log('Supplier Actualizado Correctamente:');
+    return response;
+}
+
+const setActiveStatus = async (id, isActive) => {
+    console.log(`${isActive ? "Enabling" : "Disabling"} supplier with ID: ${id}`);
+    const response = await prisma.suplier.update({  
+        where: { id },
+        data: { isActive }
+    });
+    console.log(`Supplier ${isActive ? "enabled" : "disabled"}:`);
+    return response;
+}
+
+module.exports = { create, getAll, getById, update, setActiveStatus };
 
