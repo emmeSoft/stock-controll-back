@@ -35,27 +35,18 @@ const update = async (id, dataClient) => {
     return response;
 }   
         
-const disable = async (id) => {
-    console.log(`Deshabilitando cliente con ID: ${id}`);
-    
-    const response = await prisma.client.update({
-        where: { id: id },
-        data: { isActive: false }
-    });
-    console.log('Cliente deshabilitado:');
-    return response;
-}
+const setActiveStatus = async (id, isActive) => {
+  console.log(`${isActive ? "Habilitando" : "Deshabilitando"} cliente con ID: ${id}`);
+  
+  const response = await prisma.client.update({
+    where: { id },
+    data: { isActive }
+  });
 
-const enable = async (id) => {
-    console.log(`Habilitando cliente con ID: ${id}`);
-    const response = await prisma.client.update({
-        where: { id: id },
-        data: { isActive: true }
-    });
-    console.log('Cliente habilitado:');
-    return response;
-}
+  console.log(`Cliente ${isActive ? "habilitado" : "deshabilitado"}:`);
+  return response;
+};
 
-module.exports = { create, getAll ,getById, update, disable, enable};
+module.exports = { create, getAll ,getById, update, setActiveStatus };
 
 
