@@ -24,10 +24,10 @@ const loginUser = async (email, password) => {
     token,
     user: {
       id: user.id,
-      name : user.name,
+      firstName : user.firstName,
       email: user.email,
       role: user.role,
-      profilePic: user.profilePic 
+      profilePicture: user.profilePicture
     }
   };
 };
