@@ -3,7 +3,7 @@ const employeeServices = require('../services/employeeServices');
 
 const createEmployee = async (req, res) => {
   const dataEmployee = req.body;
-
+console.log('Datos recibidos para nuevo empleado:', dataEmployee);
   try {
     const result = await employeeServices.create(dataEmployee);
     res.json(result);
