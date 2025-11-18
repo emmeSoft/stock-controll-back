@@ -3,12 +3,12 @@ CREATE TABLE `user` (
     `id` VARCHAR(191) NOT NULL,
     `email` VARCHAR(191) NOT NULL,
     `password` VARCHAR(191) NOT NULL,
-    `firstName` VARCHAR(191) NULL,
-    `lastName` VARCHAR(191) NULL,
+    `firstName` VARCHAR(191) NOT NULL,
+    `lastName` VARCHAR(191) NOT NULL,
     `fullName` VARCHAR(191) NULL,
-    `phoneNumber` VARCHAR(191) NULL,
-    `address` VARCHAR(191) NULL,
-    `city` VARCHAR(191) NULL,
+    `phoneNumber` VARCHAR(191) NOT NULL,
+    `address` VARCHAR(191) NOT NULL,
+    `city` VARCHAR(191) NOT NULL,
     `profilePicture` VARCHAR(191) NULL,
     `role` VARCHAR(191) NOT NULL DEFAULT 'regular',
     `isActive` BOOLEAN NOT NULL DEFAULT true,
@@ -22,15 +22,16 @@ CREATE TABLE `user` (
 -- CreateTable
 CREATE TABLE `client` (
     `id` VARCHAR(191) NOT NULL,
-    `email` VARCHAR(191) NULL,
-    `firstName` VARCHAR(191) NULL,
-    `lastName` VARCHAR(191) NULL,
+    `email` VARCHAR(191) NOT NULL,
+    `firstName` VARCHAR(191) NOT NULL,
+    `lastName` VARCHAR(191) NOT NULL,
     `fullName` VARCHAR(191) NULL,
-    `dni` VARCHAR(191) NULL,
+    `dni` VARCHAR(191) NOT NULL,
     `cuit` VARCHAR(191) NULL,
-    `phoneNumber` VARCHAR(191) NULL,
-    `address` VARCHAR(191) NULL,
-    `city` VARCHAR(191) NULL,
+    `phoneNumber` VARCHAR(191) NOT NULL,
+    `address` VARCHAR(191) NOT NULL,
+    `city` VARCHAR(191) NOT NULL,
+    `profilePicture` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
@@ -39,7 +40,7 @@ CREATE TABLE `client` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `suplier` (
+CREATE TABLE `supplier` (
     `id` VARCHAR(191) NOT NULL,
     `email` VARCHAR(191) NULL,
     `firstName` VARCHAR(191) NULL,
@@ -50,6 +51,7 @@ CREATE TABLE `suplier` (
     `phoneNumber` VARCHAR(191) NULL,
     `address` VARCHAR(191) NULL,
     `city` VARCHAR(191) NULL,
+    `profilePicture` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
@@ -93,7 +95,6 @@ CREATE TABLE `product` (
     `price` DOUBLE NOT NULL,
     `stock` INTEGER NOT NULL DEFAULT 0,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
-    `image` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `categoryId` VARCHAR(191) NULL,
@@ -145,6 +146,22 @@ CREATE TABLE `setting` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `Image` (
+    `id` VARCHAR(191) NOT NULL,
+    `url` VARCHAR(191) NOT NULL,
+    `altText` VARCHAR(191) NULL,
+    `isMain` BOOLEAN NOT NULL DEFAULT false,
+    `order` INTEGER NULL,
+    `productId` VARCHAR(191) NULL,
+    `userId` VARCHAR(191) NULL,
+    `categoryId` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `order` ADD CONSTRAINT `order_clientId_fkey` FOREIGN KEY (`clientId`) REFERENCES `client`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
@@ -162,3 +179,12 @@ ALTER TABLE `payment` ADD CONSTRAINT `payment_userId_fkey` FOREIGN KEY (`userId`
 
 -- AddForeignKey
 ALTER TABLE `payment` ADD CONSTRAINT `payment_clientId_fkey` FOREIGN KEY (`clientId`) REFERENCES `client`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Image` ADD CONSTRAINT `Image_productId_fkey` FOREIGN KEY (`productId`) REFERENCES `product`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Image` ADD CONSTRAINT `Image_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Image` ADD CONSTRAINT `Image_categoryId_fkey` FOREIGN KEY (`categoryId`) REFERENCES `categories`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
