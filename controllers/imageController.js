@@ -4,15 +4,27 @@ const streamifier = require("streamifier");
 
 const uploadImage = async (req, res) => {
   try {
-    const { productId, userId, categoryId, altText = "", isMain = false, order = 0 } = req.body;
-
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    // Creamos una promesa para usar upload_stream correctamente
-    const uploadToCloudinary = () => {
-      return new Promise((resolve, reject) => {
+    // 1. Detectar dinámicamente qué entidad está enviando la imagen
+    const dynamicKey = Object.keys(req.body).find((key) =>
+      key.endsWith("Id")
+    );
+
+    if (!dynamicKey) {
+      return res.status(400).json({ message: "No entity ID provided" });
+    }
+
+    const entityId = req.body[dynamicKey];
+
+    // el modelo se obtiene así: productId -> product
+    const entityModel = dynamicKey.replace("Id", "");
+
+    // 2. Subir a Cloudinary
+    const uploadToCloudinary = () =>
+      new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           { folder: "stock-controll" },
           (error, result) => {
@@ -20,26 +32,33 @@ const uploadImage = async (req, res) => {
             else resolve(result);
           }
         );
-
         streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
       });
-    };
 
-    // Subimos la imagen a Cloudinary
     const result = await uploadToCloudinary();
-    console.log("Cloudinary upload result:", result);
-    // Guardamos en la base de datos
+
+    // 3. Guardar imagen en DB
     const image = await prisma.image.create({
       data: {
         url: result.secure_url,
-        altText,
-        isMain: isMain === "true" || isMain === true,
-        order: Number(order),
-        product: productId ? { connect: { id: productId } } : undefined,
-        user: userId ? { connect: { id: userId } } : undefined,
-        category: categoryId ? { connect: { id: categoryId } } : undefined,
+        altText: req.body.altText || "",
+        isMain: req.body.isMain === "true" || false,
+        order: Number(req.body.order ?? 0),
+        [dynamicKey]: entityId, // ← súper dinámico
       },
     });
+
+    // 4. Si la entidad no tiene profilePicture, setear la primera automáticamente
+    const existing = await prisma[entityModel].findUnique({
+      where: { id: entityId },
+    });
+
+    if (existing && !existing.profilePicture) {
+      await prisma[entityModel].update({
+        where: { id: entityId },
+        data: { profilePicture: result.secure_url },
+      });
+    }
 
     res.status(200).json(image);
   } catch (err) {
