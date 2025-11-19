@@ -27,7 +27,7 @@ const uploadImage = async (req, res) => {
 
     // Subimos la imagen a Cloudinary
     const result = await uploadToCloudinary();
-
+    console.log("Cloudinary upload result:", result);
     // Guardamos en la base de datos
     const image = await prisma.image.create({
       data: {
