@@ -44,6 +44,8 @@ model client {
   isActive       Boolean   @default(true)
   orders         order[]
   payments       payment[]
+
+  Image Image[]
 }
 
 model supplier {
@@ -61,6 +63,8 @@ model supplier {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   isActive       Boolean  @default(true)
+
+  Image Image[]
 }
 
 model order {
@@ -83,6 +87,7 @@ model categories {
   id          String    @id @default(cuid())
   name        String
   description String?
+  profilePicture String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   products    product[]
@@ -95,6 +100,7 @@ model product {
   description String?
   price       Float
   stock       Int      @default(0)
+  profilePicture String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -149,13 +155,18 @@ model Image {
   altText    String?
   isMain     Boolean  @default(false) // Para marcar una imagen como principal (ej. thumbnail)
   order      Int? // Para definir un orden de visualización de las imágenes
-  productId  String?
+  clientId   String?
   userId     String?
+  supplierId String?
   categoryId String?
+  productId  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  product  product?    @relation(fields: [productId], references: [id])
+  client   client?     @relation(fields: [clientId], references: [id])
   user     user?       @relation(fields: [userId], references: [id])
+  supplier supplier?   @relation(fields: [supplierId], references: [id])
   category categories? @relation(fields: [categoryId], references: [id])
+  product  product?    @relation(fields: [productId], references: [id])
+  
 }

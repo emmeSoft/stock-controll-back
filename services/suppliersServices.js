@@ -3,21 +3,27 @@ const prisma = require(`../db/database.prisma`)
 
 const create = async (dataSuppliers) => {
     console.log('Creating supplier...');
-    const response = await prisma.suplier.create({ data: dataSuppliers });
+    const response = await prisma.supplier.create({ data: dataSuppliers });
     console.log('Supplier created:');
     return response;
 }
 
 const getAll = async () => {
-    console.log('Fetching all suppliers...');
-    const response = await prisma.suplier.findMany();
-    console.log('Suppliers fetched:');
-    return response;
+    try {
+
+        console.log('Fetching all suppliers...');
+        const response = await prisma.supplier.findMany();
+        console.log('Suppliers fetched:');
+        return response;
+    } catch (error) {
+        console.error('Error fetching suppliers:', error);
+        throw error;
+    }
 }
 
 const getById = async (id) => {
     console.log(`Fetching supplier with ID: ${id}`);
-    const response = await prisma.suplier.findUnique({ where: { id: id } });
+    const response = await prisma.supplier.findUnique({ where: { id: id } });
     if (!response) {
         throw new Error(`Supplier with ID ${id} not found`);
     }
@@ -27,7 +33,7 @@ const getById = async (id) => {
 
 const update = async (id, dataSuppliers) => {
     console.log(`Updating supplier with ID: ${id}`);
-    const response = await prisma.suplier.update({
+    const response = await prisma.supplier.update({
         where: { id: id },
         data: dataSuppliers
     });
@@ -37,7 +43,7 @@ const update = async (id, dataSuppliers) => {
 
 const setActiveStatus = async (id, isActive) => {
     console.log(`${isActive ? "Enabling" : "Disabling"} supplier with ID: ${id}`);
-    const response = await prisma.suplier.update({  
+    const response = await prisma.supplier.update({  
         where: { id },
         data: { isActive }
     });
