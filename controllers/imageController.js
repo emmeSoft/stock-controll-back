@@ -1,6 +1,7 @@
 const cloudinary = require("../utils/cloudinary");
 const prisma = require("../db/database.prisma");
 const streamifier = require("streamifier");
+const e = require("express");
 
 const uploadImage = async (req, res) => {
   try {
@@ -20,7 +21,10 @@ const uploadImage = async (req, res) => {
     const entityId = req.body[dynamicKey];
 
     // el modelo se obtiene así: productId -> product
-    const entityModel = dynamicKey.replace("Id", "");
+    let entityModel = dynamicKey.replace("Id", "");
+    if(entityModel === "category") {
+      entityModel = "categories";
+    }
 
     // 2. Subir a Cloudinary
     const uploadToCloudinary = () =>
@@ -36,7 +40,13 @@ const uploadImage = async (req, res) => {
       });
 
     const result = await uploadToCloudinary();
-
+      console.log('asdadas', {
+        url: result.secure_url,
+        altText: req.body.altText || "",
+        isMain: req.body.isMain === "true" || false,
+        order: Number(req.body.order ?? 0),
+        [dynamicKey]: entityId, // ← súper dinámico
+      },)
     // 3. Guardar imagen en DB
     const image = await prisma.image.create({
       data: {
