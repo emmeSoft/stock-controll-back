@@ -5,11 +5,22 @@ const create = async (dataProduct) => {
 
     console.log('Creating product...');
 
+    const price = parseFloat(dataProduct.price);
+    const stock = parseInt(dataProduct.stock);
+
+    if (isNaN(price) || price < 0 ) {
+        throw new Error("the Price cannot be a negative or invalid value");
+    }
+
+    if (isNaN(stock) || stock < 0 ) {
+        throw new Error("the Stock cannot be a negative or invalid value");
+    }
+
     const response = await prisma.product.create({
         data: {
             ...dataProduct,
-            price: parseFloat(dataProduct.price),
-            stock: parseInt(dataProduct.stock),
+            price,
+            stock,
         }
     });
 
