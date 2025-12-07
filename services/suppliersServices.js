@@ -23,7 +23,15 @@ const getAll = async () => {
 
 const getById = async (id) => {
     console.log(`Fetching supplier with ID: ${id}`);
-    const response = await prisma.supplier.findUnique({ where: { id: id } });
+    const response = await prisma.supplier.findUnique({ 
+        where: { id: id },
+        include: {
+            Image: {
+                orderBy: {
+                    order: "asc" // 👈 orden visual correcto
+                }
+            }
+        } });
     if (!response) {
         throw new Error(`Supplier with ID ${id} not found`);
     }

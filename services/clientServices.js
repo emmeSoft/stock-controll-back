@@ -16,7 +16,15 @@ const getAll = async () => {
 }
 
 const getById = async (id) => {
-    const response = await prisma.client.findUnique({ where: { id: id } });
+    const response = await prisma.client.findUnique({ 
+        where: { id: id },
+        include: {
+            Image: {
+                orderBy: {
+                    order: "asc" // 👈 orden visual correcto
+                }
+            }
+        } });
     if (!response) {
         throw new Error(`Client with ID ${id} not found`);
     }

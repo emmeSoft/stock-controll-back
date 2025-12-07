@@ -2,6 +2,7 @@ const cloudinary = require("../utils/cloudinary");
 const prisma = require("../db/database.prisma");
 const streamifier = require("streamifier");
 const e = require("express");
+const { reverseTranslate } = require("../utils/translator");
 
 const uploadImage = async (req, res) => {
   try {
@@ -77,4 +78,87 @@ const uploadImage = async (req, res) => {
   }
 };
 
-module.exports = { uploadImage };
+const setMainImage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newProfilePicture, entity } = req.body;
+    
+
+    if (!id || !newProfilePicture) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+
+    const translatedEntity = reverseTranslate(entity);
+    // Update the profilePicture field for the entity that has this image as main
+    // First, find the image to get the entity type and entity ID
+    const entityData = await prisma[translatedEntity].findUnique({
+      where: { id },
+
+
+    });
+
+    console.log('entityData', entityData);
+
+    const entityUpdateData = await prisma[translatedEntity].update({
+      where: { id },
+      data: { profilePicture: newProfilePicture },
+    });
+
+    console.log('entityUpdateData', entityUpdateData);
+
+
+    // Determine the entity model and entity ID dynamically
+    // let entityModel = null;
+    // let entityId = null;
+
+    // if (image.clientId) {
+    //   entityModel = "client";
+    //   entityId = image.clientId;
+    // } else if (image.userId) {
+    //   entityModel = "user";
+    //   entityId = image.userId;
+    // } else if (image.supplierId) {
+    //   entityModel = "supplier";
+    //   entityId = image.supplierId;
+    // } else if (image.productId) {
+    //   entityModel = "product";
+    //   entityId = image.productId;
+    // } else if (image.categoryId) {
+    //   entityModel = "categories";
+    //   entityId = image.categoryId;
+    // }
+
+    // if (!entityModel || !entityId) {
+    //   return res.status(400).json({ message: "Entity not found for this image" });
+    // }
+
+    // // Update the profilePicture field for the entity
+    // await prisma[entityModel].update({
+    //   where: { id: entityId },
+    //   data: { profilePicture },
+    // });
+
+    // Update all images for this entity to set isMain to false except the current one
+    // await prisma.image.updateMany({
+    //   where: {
+    //     [entityModel + "Id"]: entityId,
+    //     id: { not: id },
+    //   },
+    //   data: { isMain: false },
+    // });
+
+    // // Set the current image as main
+    // await prisma.image.update({
+    //   where: { id },
+    //   data: { isMain: true },
+    // });
+
+    res.status(200).json({ message: "Main image updated successfully" });
+  } catch (err) {
+    console.error("Set main image error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+module.exports = { uploadImage, setMainImage };

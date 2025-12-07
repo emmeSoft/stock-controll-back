@@ -17,7 +17,15 @@ const getAll = async () => {
 
 const getById = async (id) => {
     console.log(`Trayendo empleado con ID: ${id}`);
-    const response = await prisma.user.findUnique({ where: { id: id } });
+    const response = await prisma.user.findUnique({ 
+        where: { id: id },
+        include: {
+            Image: {
+                orderBy: {
+                    order: "asc" // 👈 orden visual correcto
+                }
+            }
+        } });
     if (!response) {
         throw new Error(`Empleado con ID ${id} no encontrado`);
     }

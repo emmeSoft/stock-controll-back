@@ -17,7 +17,16 @@ const getAll = async () => {
 
 const getById = async (id) => {
     console.log(`Fetching category with ID: ${id}`);
-    const response = await prisma.categories.findUnique({ where: { id: id } });
+    const response = await prisma.categories.findUnique({ 
+        where: { id: id },
+        include: {
+            Image: {
+                orderBy: {
+                    order: "asc" // 👈 orden visual correcto
+                }
+            }
+        }
+    });
     if (!response) {
         throw new Error(`Category with ID ${id} not found`);
     }
