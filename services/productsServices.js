@@ -37,7 +37,15 @@ const getAll = async () => {
 
 const getById = async (id) => {
     console.log(`Fetching product with ID: ${id}`);
-    const response = await prisma.product.findUnique({ where: { id: id } });
+    const response = await prisma.product.findUnique({ 
+        where: { id: id },
+        include: {
+            Image: {
+                orderBy: {
+                    order: "asc" // 👈 orden visual correcto
+                }
+            }
+        } });
     if (!response) {
         throw new Error(`Product with ID ${id} not found`);
     }
