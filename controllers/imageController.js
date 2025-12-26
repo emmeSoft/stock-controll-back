@@ -81,80 +81,67 @@ const uploadImage = async (req, res) => {
 const setMainImage = async (req, res) => {
   try {
     const { id } = req.params;
-    const { newProfilePicture, entity } = req.body;
+    const { newProfilePicture, entity, imageId } = req.body;
     
 
-    if (!id || !newProfilePicture) {
+    if (!id || !newProfilePicture || !entity || !imageId) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
 
     const translatedEntity = reverseTranslate(entity);
-    // Update the profilePicture field for the entity that has this image as main
-    // First, find the image to get the entity type and entity ID
-    const entityData = await prisma[translatedEntity].findUnique({
-      where: { id },
 
-
+    const images = await prisma.image.findMany({
+      where: { 
+        [`${translatedEntity}Id`]: id // traer todas las imagenes de esa entidad
+      },
+      orderBy: { order: 'asc' }
     });
 
-    console.log('entityData', entityData);
+    if(!images || images.length === 0) {
+      return res.status(404).json({ message: "No images found for this entityId" });
+    }
 
-    const entityUpdateData = await prisma[translatedEntity].update({
-      where: { id },
-      data: { profilePicture: newProfilePicture },
+    // marco todas las imagenes como NO Principales
+
+    await prisma.image.updateMany({
+      where: { [`${translatedEntity}Id`]: id},
+      data : { isMain: false }
     });
 
-    console.log('entityUpdateData', entityUpdateData);
+    // marco la iamgen seleccionada como principal y con el order 0
 
+    await prisma.image.update ({
+      where: { id: imageId },
+      data : {  
+        order : 0, 
+        isMain: true
+      }
+    });
 
-    // Determine the entity model and entity ID dynamically
-    // let entityModel = null;
-    // let entityId = null;
+    // reordeno las otras imagenes
 
-    // if (image.clientId) {
-    //   entityModel = "client";
-    //   entityId = image.clientId;
-    // } else if (image.userId) {
-    //   entityModel = "user";
-    //   entityId = image.userId;
-    // } else if (image.supplierId) {
-    //   entityModel = "supplier";
-    //   entityId = image.supplierId;
-    // } else if (image.productId) {
-    //   entityModel = "product";
-    //   entityId = image.productId;
-    // } else if (image.categoryId) {
-    //   entityModel = "categories";
-    //   entityId = image.categoryId;
-    // }
+    let orderCounter = 1;
+    
+    for (const img of images) {
+      if (img.id !== imageId) {
+        await prisma.image.update({
+          where: { id: img.id },
+          data: { order: orderCounter }
+        });
+        orderCounter++;
+      }
+    }
 
-    // if (!entityModel || !entityId) {
-    //   return res.status(400).json({ message: "Entity not found for this image" });
-    // }
+  
+    // 4. Actualizar el profilePicture en la entidad principal
+    await prisma[translatedEntity].update({
+      where: { id },
+      data: { profilePicture: newProfilePicture }
+    });
 
-    // // Update the profilePicture field for the entity
-    // await prisma[entityModel].update({
-    //   where: { id: entityId },
-    //   data: { profilePicture },
-    // });
+    res.status(200).json({ message: "Main image updated and reordered successfully" });
 
-    // Update all images for this entity to set isMain to false except the current one
-    // await prisma.image.updateMany({
-    //   where: {
-    //     [entityModel + "Id"]: entityId,
-    //     id: { not: id },
-    //   },
-    //   data: { isMain: false },
-    // });
-
-    // // Set the current image as main
-    // await prisma.image.update({
-    //   where: { id },
-    //   data: { isMain: true },
-    // });
-
-    res.status(200).json({ message: "Main image updated successfully" });
   } catch (err) {
     console.error("Set main image error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
