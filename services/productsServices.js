@@ -8,11 +8,11 @@ const create = async (dataProduct) => {
     const price = parseFloat(dataProduct.price);
     const stock = parseInt(dataProduct.stock);
 
-    if (isNaN(price) || price < 0 ) {
+    if (isNaN(price) || price < 0) {
         throw new Error("the Price cannot be a negative or invalid value");
     }
 
-    if (isNaN(stock) || stock < 0 ) {
+    if (isNaN(stock) || stock < 0) {
         throw new Error("the Stock cannot be a negative or invalid value");
     }
 
@@ -37,7 +37,7 @@ const getAll = async () => {
 
 const getById = async (id) => {
     console.log(`Fetching product with ID: ${id}`);
-    const response = await prisma.product.findUnique({ 
+    const response = await prisma.product.findUnique({
         where: { id: id },
         include: {
             Image: {
@@ -45,7 +45,8 @@ const getById = async (id) => {
                     order: "asc" // 👈 orden visual correcto
                 }
             }
-        } });
+        }
+    });
     if (!response) {
         throw new Error(`Product with ID ${id} not found`);
     }
@@ -55,17 +56,45 @@ const getById = async (id) => {
 
 const update = async (id, dataProduct) => {
     console.log(`Updating product with ID: ${id}`);
+
+    const allowedFields = [
+        "name",
+        "description",
+        "price",
+        "stock",
+        "profilePicture",
+        "isActive",
+        "categoryId"
+    ];
+
+    const cleanData = Object.fromEntries(
+        Object.entries(dataProduct).filter(
+            ([key, value]) => allowedFields.includes(key) && value !== undefined
+        )
+    );
+
+    if ("price" in cleanData) {
+        cleanData.price = parseFloat(cleanData.price);
+    }
+
+    if ("stock" in cleanData) {
+        cleanData.stock = parseInt(cleanData.stock);
+    }
+
+    console.log("Updating with:", cleanData);
+
+    if (Object.keys(cleanData).length === 0) {
+        throw new Error("No hay campos válidos para actualizar");
+    }
+
     const response = await prisma.product.update({
-        where: { id: id },
-        data: {
-            ...dataProduct,
-            price: parseFloat(dataProduct.price),
-            stock: parseInt(dataProduct.stock),
-        }
+        where: { id },
+        data: cleanData
     });
-    console.log('Product updated successfully:');
+
     return response;
-}
+};
+
 
 const setActiveStatus = async (id, isActive) => {
     console.log(`${isActive ? "Enabling" : "Disabling"} product with ID: ${id}`);
