@@ -1,4 +1,6 @@
-const prisma = require(`../db/database.prisma`)
+const prisma = require(`../db/database.prisma`);
+const ALLOWED_ROLES = ["superadmin", "admin", "user"];
+const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
 
 const create = async (dataEmployee) => {
@@ -17,7 +19,7 @@ const getAll = async () => {
 
 const getById = async (id) => {
     console.log(`Trayendo empleado con ID: ${id}`);
-    const response = await prisma.user.findUnique({ 
+    const response = await prisma.user.findUnique({
         where: { id: id },
         include: {
             Image: {
@@ -25,7 +27,8 @@ const getById = async (id) => {
                     order: "asc" // 👈 orden visual correcto
                 }
             }
-        } });
+        }
+    });
     if (!response) {
         throw new Error(`Empleado con ID ${id} no encontrado`);
     }
@@ -36,8 +39,80 @@ const getById = async (id) => {
 const update = async (id, dataEmployee) => {
     console.log(`actualizando empleado con ID: ${id}`);
 
+
+    const allowedFields = [
+        "name",
+        "fullName",
+        "firstName",
+        "lastName",
+        "email",
+        "phoneNumber",
+        "address",
+        "city",
+        "dni",
+        "cuit",
+        "description",
+        "price",
+        "stock",
+        "profilePicture",
+        "isActive",
+
+    ];
+
+    const cleanData = Object.fromEntries(
+        Object.entries(dataEmployee).filter(
+            ([key, value]) => allowedFields.includes(key) && value !== undefined
+        )
+    );
+
+    if ("role" in cleanData) {
+        if (!ALLOWED_ROLES.includes(cleanData.role)) {
+            throw new Error("Rol inválido");
+        }
+    }
+
+
+    if ("dni" in cleanData) {
+        const normalized = normalizeDni(cleanData.dni);
+
+        if (!isValidDni(normalized)) {
+            throw new Error("DNI inválido");
+        }
+
+        cleanData.dni = normalized;
+    }
+
+    if ("email" in cleanData) {
+        const normalized = normalizeEmail(cleanData.email);
+
+        if (!isValidEmail(normalized)) {
+            throw new Error("Email inválido");
+        }
+
+        cleanData.email = normalized;
+    }
+
+    if ("cuit" in cleanData) {
+        const normalized = normalizeCuit(cleanData.cuit);
+
+        if (!isValidCuit(normalized)) {
+            throw new Error("CUIT inválido");
+        }
+
+        cleanData.cuit = normalized;
+    }
+
+    if ("phoneNumber" in cleanData) {
+        const normalized = normalizeArPhone(cleanData.phoneNumber);
+
+        if (!isValidArPhone(normalized)) {
+            throw new Error("Número de teléfono inválido");
+        }
+
+    }
+
     const response = await prisma.user.update({
-        where: { id: id},
+        where: { id: id },
         data: dataEmployee
     });
     console.log('Empleado Actualizado:');
@@ -49,10 +124,10 @@ const setActiveStatus = async (id, isActive) => {
 
     const response = await prisma.user.update({
         where: { id },
-        data : { isActive } 
+        data: { isActive }
     });
 
-    console.log (`Empleado ${ isActive ? "habilitado" : "deshabilitado"}`);
+    console.log(`Empleado ${isActive ? "habilitado" : "deshabilitado"}`);
 
     return response;
 }

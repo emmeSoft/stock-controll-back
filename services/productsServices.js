@@ -30,7 +30,13 @@ const create = async (dataProduct) => {
 
 const getAll = async () => {
     console.log('Fetching all products...');
-    const response = await prisma.product.findMany();
+    const response = await prisma.product.findMany(
+        {
+            include: {
+                category: true
+            }
+        }
+    );
     console.log('Products fetched:');
     return response;
 }
@@ -43,6 +49,11 @@ const getById = async (id) => {
             Image: {
                 orderBy: {
                     order: "asc" // 👈 orden visual correcto
+                }
+            },
+            category: {
+                select: {
+                    name: true
                 }
             }
         }
@@ -64,7 +75,9 @@ const update = async (id, dataProduct) => {
         "stock",
         "profilePicture",
         "isActive",
-        "categoryId"
+        "categoryId",
+        "category"
+
     ];
 
     const cleanData = Object.fromEntries(
@@ -89,7 +102,15 @@ const update = async (id, dataProduct) => {
 
     const response = await prisma.product.update({
         where: { id },
-        data: cleanData
+        data: cleanData,
+
+        include: {
+            category: {
+                select: {
+                    name: true
+                }
+            }
+        }
     });
 
     return response;
