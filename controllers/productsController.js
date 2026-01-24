@@ -4,6 +4,11 @@ const productsServices = require('../services/productsServices');
 const createProduct = async (req, res) => {
   const dataProduct = req.body;
 
+  if (!dataProduct.categoryId) {
+    throw new Error("El producto debe tener una categoría");
+  }
+
+
   try {
     const result = await productsServices.create(dataProduct);
     res.json(result);
