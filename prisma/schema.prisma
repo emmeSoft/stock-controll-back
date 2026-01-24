@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+
+}
+
+model user {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  password       String
+  firstName      String
+  lastName       String
+  fullName       String?
+  phoneNumber    String
+  address        String
+  city           String
+  profilePicture String?
+  role           String    @default("regular")
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  payments       payment[]
+
+  Image Image[]
+}
+
+model client {
+  id             String    @id @default(cuid())
+  email          String
+  firstName      String
+  lastName       String
+  fullName       String?
+  dni            String
+  cuit           String?
+  phoneNumber    String
+  address        String
+  city           String
+  profilePicture String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  isActive       Boolean   @default(true)
+  orders         order[]
+  payments       payment[]
+
+  Image Image[]
+}
+
+model supplier {
+  id             String   @id @default(cuid())
+  email          String?
+  firstName      String?
+  lastName       String?
+  fullName       String?
+  dni            String?
+  cuit           String?
+  phoneNumber    String?
+  address        String?
+  city           String?
+  profilePicture String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  isActive       Boolean  @default(true)
+
+  Image Image[]
+}
+
+model order {
+  id            String   @id @default(cuid())
+  clientId      String?
+  orderDate     DateTime @default(now())
+  amount        Float
+  amoutPayed    Float    @default(0)
+  amoutToPaid   Float    @default(0)
+  paymentMethod String?
+  status        String   @default("pending")
+  statusPayment String?  @default("pending")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  client       client?       @relation(fields: [clientId], references: [id])
+  orderDetails orderDetail[]
+}
+
+model categories {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  profilePicture String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    product[]
+  Image Image[]
+}
+
+model product {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  stock       Int      @default(0)
+  profilePicture String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  categoryId  String?
+  category     categories?   @relation(fields: [categoryId], references: [id])
+  orderDetails orderDetail[]
+  Image Image[]
+}
+
+model orderDetail {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int      @default(1)
+  price     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  order   order   @relation(fields: [orderId], references: [id])
+  product product @relation(fields: [productId], references: [id])
+}
+
+model payment {
+  id            String   @id @default(cuid())
+  userId        String?
+  clientId      String?
+  amount        Float
+  sucursalId    String?
+  paymentDate   DateTime @default(now())
+  paymentMethod String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user   user?   @relation(fields: [userId], references: [id])
+  client client? @relation(fields: [clientId], references: [id])
+}
+
+model setting {
+  id          String   @id @default(cuid())
+  name        String
+  detail      String?
+  type        String
+  value       String?
+  code        String?
+  isActive    Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Image {
+  id         String   @id @default(cuid())
+  url        String
+  altText    String?
+  isMain     Boolean  @default(false) // Para marcar una imagen como principal (ej. thumbnail)
+  order      Int? // Para definir un orden de visualización de las imágenes
+  clientId   String?
+  userId     String?
+  supplierId String?
+  categoryId String?
+  productId  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  client   client?     @relation(fields: [clientId], references: [id])
+  user     user?       @relation(fields: [userId], references: [id])
+  supplier supplier?   @relation(fields: [supplierId], references: [id])
+  category categories? @relation(fields: [categoryId], references: [id])
+  product  product?    @relation(fields: [productId], references: [id])
+  
+}
