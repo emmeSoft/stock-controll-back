@@ -9,7 +9,7 @@ const createSale = async (req, res) => {
       return res.status(400).json({ message: "La venta debe tener al menos un producto" });
     }
 
-    const result = await salesServices.create(saleData);
+    const result = await salesServices.create(saleData, req.user);
     res.status(201).json(result);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -18,7 +18,7 @@ const createSale = async (req, res) => {
 
 const getAllSales = async (req, res) => {
   try {
-    const result = await salesServices.getAll();
+    const result = await salesServices.getAll(req.user);
     res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });

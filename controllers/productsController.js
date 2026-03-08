@@ -10,7 +10,7 @@ const createProduct = async (req, res) => {
 
 
   try {
-    const result = await productsServices.create(dataProduct);
+    const result = await productsServices.create(dataProduct, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -19,7 +19,7 @@ const createProduct = async (req, res) => {
 
 const getAllProducts = async (req, res) => {
   try {
-    const result = await productsServices.getAll();
+    const result = await productsServices.getAll(req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -30,7 +30,7 @@ const getProductById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const result = await productsServices.getById(id);
+    const result = await productsServices.getById(id, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -42,7 +42,7 @@ const updateProduct = async (req, res) => {
   const dataProduct = req.body;
 
   try {
-    const result = await productsServices.update(id, dataProduct);
+    const result = await productsServices.update(id, dataProduct, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -58,7 +58,7 @@ const toggleActiveStatus = async (req, res) => {
   }
 
   try {
-    const result = await productsServices.setActiveStatus(id, isActive);
+    const result = await productsServices.setActiveStatus(id, isActive, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });

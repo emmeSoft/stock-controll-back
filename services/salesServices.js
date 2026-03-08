@@ -1,15 +1,30 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const cajaServices = require('./cajaServices');
 
-const create = async (saleData) => {
-  const { items, amount, clientId, paymentMethod } = saleData;
+const create = async (saleData, user) => {
+  const { items, amount, clientId, paymentMethod, storeId } = saleData;
+
+  // Determine effective storeId for the sale
+  const effectiveStoreId = user.role === 'SUPERADMIN' ? storeId : user.storeId;
+  if (!effectiveStoreId) {
+    throw new Error('Debe especificar una tienda para la venta.');
+  }
+
+  // VERIFICAR CAJA ABIERTA -> Regla de negocio.
+  // We need to pass a mock user object with the effectiveStoreId for the check
+  const currentRegister = await cajaServices.getCurrentRegister({ ...user, storeId: effectiveStoreId });
+  if (!currentRegister) {
+    throw new Error('No se puede registrar la venta: Debes abrir una caja primero en esta tienda.');
+  }
 
   // Utilize a Prisma transaction to ensure atomicity
   return await prisma.$transaction(async (tx) => {
     // 1. Verify stock for all items
     for (const item of items) {
-      const product = await tx.product.findUnique({
-        where: { id: item.id }
+      const productWhere = user.storeId ? { id: item.id, storeId: user.storeId } : { id: item.id };
+      const product = await tx.product.findFirst({
+        where: productWhere
       });
 
       if (!product) {
@@ -24,6 +39,8 @@ const create = async (saleData) => {
     // 2. Create the order
     const order = await tx.order.create({
       data: {
+        storeId: effectiveStoreId,
+        cashRegisterId: currentRegister.id,
         clientId: clientId || null,
         amount: amount,
         amoutPayed: amount, // Assuming full payment at POS for now
@@ -59,8 +76,10 @@ const create = async (saleData) => {
   });
 };
 
-const getAll = async () => {
+const getAll = async (user) => {
+  const whereClause = user.storeId ? { storeId: user.storeId } : {};
   return await prisma.order.findMany({
+    where: whereClause,
     orderBy: { createdAt: 'desc' },
     include: {
       client: true,
