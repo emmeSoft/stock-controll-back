@@ -5,7 +5,7 @@ const createCategories = async (req, res) => {
   const dataCategories = req.body;
 
   try {
-    const result = await categoriesServices.create(dataCategories);
+    const result = await categoriesServices.create(dataCategories, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -14,7 +14,7 @@ const createCategories = async (req, res) => {
 
 const getAllCategories = async (req, res) => {
   try {
-    const result = await categoriesServices.getAll();
+    const result = await categoriesServices.getAll(req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -25,7 +25,7 @@ const getCategoryById = async (req, res) => {
   const { id } = req.params;  
 
   try {
-    const result = await categoriesServices.getById(id);
+    const result = await categoriesServices.getById(id, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -37,7 +37,7 @@ const updateCategories = async (req, res) => {
   const dataCategories = req.body;
 
   try {
-    const result = await categoriesServices.update(id, dataCategories);
+    const result = await categoriesServices.update(id, dataCategories, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -53,7 +53,7 @@ const toggleActiveStatus = async (req, res) => {
   }
 
   try {
-    const result = await categoriesServices.setActiveStatus(id, isActive);
+    const result = await categoriesServices.setActiveStatus(id, isActive, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });

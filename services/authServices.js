@@ -15,18 +15,21 @@ const loginUser = async (email, password) => {
 
 
 
-  const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, {
-    expiresIn: '1h'
-  });
+  const token = jwt.sign(
+    { id: user.id, email: user.email, role: user.role, storeId: user.storeId },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
 
   return {
     message: 'Login exitoso',
     token,
     user: {
       id: user.id,
-      firstName : user.firstName,
+      firstName: user.firstName,
       email: user.email,
       role: user.role,
+      storeId: user.storeId,
       profilePicture: user.profilePicture
     }
   };

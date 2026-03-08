@@ -5,7 +5,7 @@ const createEmployee = async (req, res) => {
   const dataEmployee = req.body;
 console.log('Datos recibidos para nuevo empleado:', dataEmployee);
   try {
-    const result = await employeeServices.create(dataEmployee);
+    const result = await employeeServices.create(dataEmployee, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -15,7 +15,7 @@ console.log('Datos recibidos para nuevo empleado:', dataEmployee);
 const getAllEmployees = async (req, res) => {
   
   try {
-    const result = await employeeServices.getAll();
+    const result = await employeeServices.getAll(req.user);
     res.json(result);
     console.log('Empleados Cargados:', result);
   } catch (error) {
@@ -27,7 +27,7 @@ const getEmployeeById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const result = await employeeServices.getById(id);
+    const result = await employeeServices.getById(id, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -38,7 +38,7 @@ const updateEmployee = async (req, res) => {
   const { id } = req.params;
   const dataEmployee = req.body;
   try {
-    const result = await employeeServices.update(id, dataEmployee);
+    const result = await employeeServices.update(id, dataEmployee, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -54,7 +54,7 @@ const toggleActiveStatus = async (req, res) => {
   }
 
   try {
-    const result = await employeeServices.setActiveStatus(id, isActive);
+    const result = await employeeServices.setActiveStatus(id, isActive, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });

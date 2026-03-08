@@ -5,12 +5,48 @@ generator client {
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
+}
 
+enum CashRegisterStatus {
+  OPEN
+  CLOSED
+}
+
+enum MovementType {
+  INCOME
+  EXPENSE
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  USUARIO
+}
+
+model store {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         user[]
+  clients       client[]
+  suppliers     supplier[]
+  orders        order[]
+  products      product[]
+  categories    categories[]
+  payments      payment[]
+  cashRegisters CashRegister[]
+  cashMovements CashMovement[]
 }
 
 model user {
-  id             String    @id @default(cuid())
-  email          String    @unique
+  id             String   @id @default(cuid())
+  storeId        String?
+  email          String   @unique
   password       String
   firstName      String
   lastName       String
@@ -19,17 +55,22 @@ model user {
   address        String
   city           String
   profilePicture String?
-  role           String    @default("regular")
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  payments       payment[]
+  role           String   @default("USUARIO") // SUPERADMIN, ADMIN, USUARIO
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  Image Image[]
+  store               store?         @relation(fields: [storeId], references: [id])
+  payments            payment[]
+  Image               Image[]
+  openedCashRegisters CashRegister[] @relation("OpenedCashRegisters")
+  closedCashRegisters CashRegister[] @relation("ClosedCashRegisters")
+  cashMovements       CashMovement[]
 }
 
 model client {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
+  storeId        String
   email          String
   firstName      String
   lastName       String
@@ -40,17 +81,19 @@ model client {
   address        String
   city           String
   profilePicture String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  isActive       Boolean   @default(true)
-  orders         order[]
-  payments       payment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  isActive       Boolean  @default(true)
 
-  Image Image[]
+  store    store     @relation(fields: [storeId], references: [id])
+  orders   order[]
+  payments payment[]
+  Image    Image[]
 }
 
 model supplier {
   id             String   @id @default(cuid())
+  storeId        String
   email          String?
   firstName      String?
   lastName       String?
@@ -65,50 +108,62 @@ model supplier {
   updatedAt      DateTime @updatedAt
   isActive       Boolean  @default(true)
 
+  store store   @relation(fields: [storeId], references: [id])
   Image Image[]
 }
 
 model order {
-  id            String   @id @default(cuid())
-  clientId      String?
-  orderDate     DateTime @default(now())
-  amount        Float
-  amoutPayed    Float    @default(0)
-  amoutToPaid   Float    @default(0)
-  paymentMethod String?
-  status        String   @default("pending")
-  statusPayment String?  @default("pending")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(cuid())
+  storeId        String
+  cashRegisterId String?
+  clientId       String?
+  orderDate      DateTime @default(now())
+  amount         Float
+  amoutPayed     Float    @default(0)
+  amoutToPaid    Float    @default(0)
+  paymentMethod  String?
+  status         String   @default("pending")
+  statusPayment  String?  @default("pending")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  store        store         @relation(fields: [storeId], references: [id])
+  cashRegister CashRegister? @relation(fields: [cashRegisterId], references: [id])
   client       client?       @relation(fields: [clientId], references: [id])
   orderDetails orderDetail[]
 }
 
 model categories {
-  id          String    @id @default(cuid())
-  name        String
-  description String?
+  id             String   @id @default(cuid())
+  storeId        String
+  name           String
+  description    String?
   profilePicture String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  products    product[]
-  Image Image[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  store    store     @relation(fields: [storeId], references: [id])
+  products product[]
+  Image    Image[]
 }
 
 model product {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  price       Float
-  stock       Int      @default(0)
+  id             String   @id @default(cuid())
+  storeId        String
+  name           String
+  description    String?
+  price          Float
+  stock          Int      @default(0)
   profilePicture String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  categoryId  String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  categoryId     String?
+
+  store        store         @relation(fields: [storeId], references: [id])
   category     categories?   @relation(fields: [categoryId], references: [id])
   orderDetails orderDetail[]
-  Image Image[]
+  Image        Image[]
 }
 
 model orderDetail {
@@ -119,26 +174,31 @@ model orderDetail {
   price     Float
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   order   order   @relation(fields: [orderId], references: [id])
   product product @relation(fields: [productId], references: [id])
 }
 
 model payment {
   id            String   @id @default(cuid())
+  storeId       String
   userId        String?
   clientId      String?
   amount        Float
   sucursalId    String?
   paymentDate   DateTime @default(now())
   paymentMethod String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  store  store   @relation(fields: [storeId], references: [id])
   user   user?   @relation(fields: [userId], references: [id])
   client client? @relation(fields: [clientId], references: [id])
 }
 
 model setting {
   id          String   @id @default(cuid())
+  storeId     String?
   name        String
   detail      String?
   type        String
@@ -154,8 +214,8 @@ model Image {
   id         String   @id @default(cuid())
   url        String
   altText    String?
-  isMain     Boolean  @default(false) // Para marcar una imagen como principal (ej. thumbnail)
-  order      Int? // Para definir un orden de visualización de las imágenes
+  isMain     Boolean  @default(false)
+  order      Int?
   clientId   String?
   userId     String?
   supplierId String?
@@ -169,5 +229,43 @@ model Image {
   supplier supplier?   @relation(fields: [supplierId], references: [id])
   category categories? @relation(fields: [categoryId], references: [id])
   product  product?    @relation(fields: [productId], references: [id])
-  
+}
+
+model CashRegister {
+  id             String             @id @default(cuid())
+  storeId        String
+  openedByUserId String
+  closedByUserId String?
+  openingAmount  Float
+  closingAmount  Float?
+  expectedAmount Float?
+  difference     Float?
+  status         CashRegisterStatus @default(OPEN)
+  openedAt       DateTime           @default(now())
+  closedAt       DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  store         store          @relation(fields: [storeId], references: [id])
+  openedByUser  user           @relation("OpenedCashRegisters", fields: [openedByUserId], references: [id])
+  closedByUser  user?          @relation("ClosedCashRegisters", fields: [closedByUserId], references: [id])
+  orders        order[]
+  cashMovements CashMovement[]
+}
+
+model CashMovement {
+  id             String       @id @default(cuid())
+  storeId        String
+  cashRegisterId String
+  userId         String
+  type           MovementType
+  amount         Float
+  description    String?
+  reference      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  store        store        @relation(fields: [storeId], references: [id])
+  cashRegister CashRegister @relation(fields: [cashRegisterId], references: [id])
+  user         user         @relation(fields: [userId], references: [id])
 }

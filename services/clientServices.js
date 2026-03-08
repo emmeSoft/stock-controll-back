@@ -2,23 +2,25 @@ const prisma = require(`../db/database.prisma`);
 const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
 
-const create = async (dataClient) => {
-    console.log('Creating client...');
-    const response = await prisma.client.create({ data: dataClient });
+const create = async (dataClient, user) => {
+    console.log('Creating client...',user);
+    const response = await prisma.client.create({ data: { ...dataClient, storeId: user.storeId } });
     console.log('Client created:');
     return response;
 }
 
-const getAll = async () => {
+const getAll = async (user) => {
     console.log('Fetching all clients...');
-    const response = await prisma.client.findMany();
+    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+    const response = await prisma.client.findMany({ where: whereClause });
     console.log('Clients fetched:');
     return response;
 }
 
-const getById = async (id) => {
-    const response = await prisma.client.findUnique({
-        where: { id: id },
+const getById = async (id, user) => {
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const response = await prisma.client.findFirst({
+        where: whereClause,
         include: {
             Image: {
                 orderBy: {
@@ -34,8 +36,11 @@ const getById = async (id) => {
     return response;
 }
 
-const update = async (id, dataClient) => {
+const update = async (id, dataClient, user) => {
     console.log(`Actualizando cliente con ID: ${id}`);
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const existing = await prisma.client.findFirst({ where: whereClause });
+    if (!existing) throw new Error("Client not found or access denied");
 
 
     const allowedFields = [
@@ -110,8 +115,12 @@ const update = async (id, dataClient) => {
     return response;
 }
 
-const setActiveStatus = async (id, isActive) => {
+const setActiveStatus = async (id, isActive, user) => {
     console.log(`${isActive ? "Habilitando" : "Deshabilitando"} cliente con ID: ${id}`);
+    
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const existing = await prisma.client.findFirst({ where: whereClause });
+    if (!existing) throw new Error("Client not found or access denied");
 
     const response = await prisma.client.update({
         where: { id },
