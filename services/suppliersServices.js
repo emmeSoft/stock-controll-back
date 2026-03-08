@@ -1,18 +1,17 @@
 const prisma = require(`../db/database.prisma`)
 
-
-const create = async (dataSuppliers) => {
+const create = async (dataSuppliers, user) => {
     console.log('Creating supplier...');
-    const response = await prisma.supplier.create({ data: dataSuppliers });
+    const response = await prisma.supplier.create({ data: { ...dataSuppliers, storeId: user.storeId } });
     console.log('Supplier created:');
     return response;
 }
 
-const getAll = async () => {
+const getAll = async (user) => {
     try {
-
         console.log('Fetching all suppliers...');
-        const response = await prisma.supplier.findMany();
+        const whereClause = user.storeId ? { storeId: user.storeId } : {};
+        const response = await prisma.supplier.findMany({ where: whereClause });
         console.log('Suppliers fetched:');
         return response;
     } catch (error) {
@@ -21,10 +20,11 @@ const getAll = async () => {
     }
 }
 
-const getById = async (id) => {
+const getById = async (id, user) => {
     console.log(`Fetching supplier with ID: ${id}`);
-    const response = await prisma.supplier.findUnique({ 
-        where: { id: id },
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const response = await prisma.supplier.findFirst({ 
+        where: whereClause,
         include: {
             Image: {
                 orderBy: {
@@ -39,8 +39,12 @@ const getById = async (id) => {
     return response;
 }
 
-const update = async (id, dataSuppliers) => {
+const update = async (id, dataSuppliers, user) => {
     console.log(`Updating supplier with ID: ${id}`);
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const existing = await prisma.supplier.findFirst({ where: whereClause });
+    if (!existing) throw new Error("Supplier not found or access denied");
+
     const response = await prisma.supplier.update({
         where: { id: id },
         data: dataSuppliers
@@ -49,8 +53,12 @@ const update = async (id, dataSuppliers) => {
     return response;
 }
 
-const setActiveStatus = async (id, isActive) => {
+const setActiveStatus = async (id, isActive, user) => {
     console.log(`${isActive ? "Enabling" : "Disabling"} supplier with ID: ${id}`);
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const existing = await prisma.supplier.findFirst({ where: whereClause });
+    if (!existing) throw new Error("Supplier not found or access denied");
+
     const response = await prisma.supplier.update({  
         where: { id },
         data: { isActive }
@@ -60,4 +68,3 @@ const setActiveStatus = async (id, isActive) => {
 }
 
 module.exports = { create, getAll, getById, update, setActiveStatus };
-

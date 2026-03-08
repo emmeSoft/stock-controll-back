@@ -1,26 +1,40 @@
 const prisma = require(`../db/database.prisma`);
-const ALLOWED_ROLES = ["superadmin", "admin", "user"];
+const ALLOWED_ROLES = ["SUPERADMIN", "ADMIN", "USUARIO"];
 const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
 
-const create = async (dataEmployee) => {
+const create = async (dataEmployee, user) => {
     console.log('Creando Empleado...');
-    const response = await prisma.user.create({ data: dataEmployee });
+    
+    // Un ADMIN no puede crear un SUPERADMIN
+    if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
+        throw new Error('No tienes permisos para crear un usuario de nivel SUPERADMIN.');
+    }
+
+    // El empleado se asigna a la tienda del creador (a menos que el creador sea un SUPERADMIN y haya especificado storeId explicitamente)
+    let assignedStoreId = user.storeId;
+    if (user.role === 'SUPERADMIN' && dataEmployee.storeId) {
+        assignedStoreId = dataEmployee.storeId;
+    }
+
+    const response = await prisma.user.create({ data: { ...dataEmployee, storeId: assignedStoreId } });
     console.log('Empleado creado:');
     return response;
 }
 
-const getAll = async () => {
+const getAll = async (user) => {
     console.log('Trayendo todos los empleados...');
-    const response = await prisma.user.findMany();
+    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+    const response = await prisma.user.findMany({ where: whereClause });
     console.log('Empleados Cargados:');
     return response;
 }
 
-const getById = async (id) => {
+const getById = async (id, user) => {
     console.log(`Trayendo empleado con ID: ${id}`);
-    const response = await prisma.user.findUnique({
-        where: { id: id },
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const response = await prisma.user.findFirst({
+        where: whereClause,
         include: {
             Image: {
                 orderBy: {
@@ -36,10 +50,17 @@ const getById = async (id) => {
     return response;
 }
 
-const update = async (id, dataEmployee) => {
+const update = async (id, dataEmployee, user) => {
     console.log(`actualizando empleado con ID: ${id}`);
 
-
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const existing = await prisma.user.findFirst({ where: whereClause });
+    if (!existing) throw new Error("Empleado no encontrado o denegado");
+    
+    // Un ADMIN no puede promoverse o promover a alguien a SUPERADMIN
+    if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
+        throw new Error('No tienes permisos para otorgar nivel SUPERADMIN.');
+    }
     const allowedFields = [
         "name",
         "fullName",
@@ -113,14 +134,18 @@ const update = async (id, dataEmployee) => {
 
     const response = await prisma.user.update({
         where: { id: id },
-        data: dataEmployee
+        data: cleanData
     });
     console.log('Empleado Actualizado:');
     return response;
 }
 
-const setActiveStatus = async (id, isActive) => {
+const setActiveStatus = async (id, isActive, user) => {
     console.log(`${isActive ? "Habilitando" : "Deshabilitando"} empleado con ID: ${id}`);
+    
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const existing = await prisma.user.findFirst({ where: whereClause });
+    if (!existing) throw new Error("Empleado no encontrado o denegado");
 
     const response = await prisma.user.update({
         where: { id },
@@ -135,5 +160,3 @@ const setActiveStatus = async (id, isActive) => {
 
 
 module.exports = { create, getAll, getById, update, setActiveStatus };
-
-

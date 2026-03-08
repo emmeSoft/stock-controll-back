@@ -6,7 +6,7 @@ const createSuppliers = async (req, res) => {
   const dataSuppliers = req.body;
 
   try {
-    const result = await suppliersServices.create(dataSuppliers);
+    const result = await suppliersServices.create(dataSuppliers, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -15,7 +15,7 @@ const createSuppliers = async (req, res) => {
 
 const getAllSuppliers = async (req, res) => {
   try {
-    const result = await suppliersServices.getAll();
+    const result = await suppliersServices.getAll(req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -26,7 +26,7 @@ const getSupplierById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const result = await suppliersServices.getById(id);
+    const result = await suppliersServices.getById(id, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message }); 
@@ -39,7 +39,7 @@ const updateSuppliers = async (req, res) => {
   const dataSuppliers = req.body;
 
   try {
-    const result = await suppliersServices.update(id, dataSuppliers);
+    const result = await suppliersServices.update(id, dataSuppliers, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -55,7 +55,7 @@ const toggleActiveStatus = async (req, res) => {
   }
 
   try {
-    const result = await suppliersServices.setActiveStatus(id, isActive);
+    const result = await suppliersServices.setActiveStatus(id, isActive, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });

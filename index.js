@@ -11,6 +11,9 @@ const categoriesRoutes = require('./routes/categoriesRoutes');
 const productsRoutes = require('./routes/productsRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const salesRoutes = require('./routes/salesRoutes');
+const storesRoutes = require('./routes/storesRoutes');
+const cajaRoutes = require('./routes/cajaRoutes');
+const movimientosRoutes = require('./routes/movimientosRoutes');
 
 app.use(cors({
   origin: ["http://localhost:5173", "http://localhost:5174"],
@@ -27,6 +30,9 @@ app.use("/api/categories", categoriesRoutes); // creo que las categorias deberia
 app.use("/api/products", productsRoutes); // mismo comentario para los productos.
 app.use("/api/images", imageRoutes); 
 app.use("/api/sales", salesRoutes);
+app.use("/api/stores", storesRoutes);
+app.use("/api/caja", cajaRoutes);
+app.use("/api/movimientos", movimientosRoutes);
 app.listen(3000, () => {
   console.log('Servidor corriendo en http://localhost:3000');
 });

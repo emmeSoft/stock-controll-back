@@ -1,4 +1,3 @@
-
 const clientServices = require('../services/clientServices');
 
 
@@ -6,7 +5,7 @@ const createClient = async (req, res) => {
   const dataClient = req.body;
 
   try {
-    const result = await clientServices.create(dataClient);
+    const result = await clientServices.create(dataClient, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -15,7 +14,7 @@ const createClient = async (req, res) => {
 
 const getAllClients = async (req, res) => {
   try {
-    const result = await clientServices.getAll();
+    const result = await clientServices.getAll(req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -25,7 +24,7 @@ const getClientDetails = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const result = await clientServices.getById(id);
+    const result = await clientServices.getById(id, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -36,7 +35,7 @@ const updateClient = async (req, res) => {
   const { id } = req.params;
   const dataClient = req.body;
   try {
-    const result = await clientServices.update(id, dataClient);
+    const result = await clientServices.update(id, dataClient, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
@@ -52,7 +51,7 @@ const toggleActiveStatus = async (req, res) => {
   }
 
   try {
-    const result = await clientServices.setActiveStatus(id, isActive);
+    const result = await clientServices.setActiveStatus(id, isActive, req.user);
     res.json(result);
   } catch (error) {
     res.status(401).json({ message: error.message });
