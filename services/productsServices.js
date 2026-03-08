@@ -1,7 +1,7 @@
 const prisma = require(`../db/database.prisma`)
 
 
-const create = async (dataProduct) => {
+const create = async (dataProduct, user) => {
 
     console.log('Creating product...');
 
@@ -21,6 +21,7 @@ const create = async (dataProduct) => {
             ...dataProduct,
             price,
             stock,
+            storeId: user.storeId
         }
     });
 
@@ -28,10 +29,14 @@ const create = async (dataProduct) => {
     return response;
 }
 
-const getAll = async () => {
+const getAll = async (user) => {
     console.log('Fetching all products...');
+
+    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+
     const response = await prisma.product.findMany(
         {
+            where: whereClause,
             include: {
                 category: true
             }
@@ -41,10 +46,13 @@ const getAll = async () => {
     return response;
 }
 
-const getById = async (id) => {
+const getById = async (id, user) => {
     console.log(`Fetching product with ID: ${id}`);
-    const response = await prisma.product.findUnique({
-        where: { id: id },
+
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+
+    const response = await prisma.product.findFirst({
+        where: whereClause,
         include: {
             Image: {
                 orderBy: {
@@ -65,8 +73,13 @@ const getById = async (id) => {
     return response;
 }
 
-const update = async (id, dataProduct) => {
+const update = async (id, dataProduct, user) => {
     console.log(`Updating product with ID: ${id}`);
+
+    // Verify ownership first
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const existingProduct = await prisma.product.findFirst({ where: whereClause });
+    if (!existingProduct) throw new Error(`Product with ID ${id} not found or access denied`);
 
     const allowedFields = [
         "name",
@@ -117,8 +130,12 @@ const update = async (id, dataProduct) => {
 };
 
 
-const setActiveStatus = async (id, isActive) => {
+const setActiveStatus = async (id, isActive, user) => {
     console.log(`${isActive ? "Enabling" : "Disabling"} product with ID: ${id}`);
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    const existingProduct = await prisma.product.findFirst({ where: whereClause });
+    if (!existingProduct) throw new Error(`Product with ID ${id} not found or access denied`);
+
     const response = await prisma.product.update({
         where: { id },
         data: { isActive }
