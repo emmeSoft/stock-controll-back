@@ -8,8 +8,13 @@ const prisma = require(`../db/database.prisma`)
 const loginUser = async (email, password) => {
    const user = await prisma['user'].findUnique({ where: { email } });
 
+  if (!user) {
+    throw new Error('Credenciales incorrectas desde el backend');
+  }
 
-  if (email !== user.email || password !== user.password) {
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+
+  if (!isPasswordValid) {
     throw new Error('Credenciales incorrectas desde el backend');
   }
 

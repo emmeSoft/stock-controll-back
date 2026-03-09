@@ -16,6 +16,10 @@ const create = async (dataProduct, user) => {
         throw new Error("the Stock cannot be a negative or invalid value");
     }
 
+    if (!user.storeId) {
+        throw new Error('Debe seleccionar una tienda para asignar al producto.');
+    }
+
     const response = await prisma.product.create({
         data: {
             ...dataProduct,

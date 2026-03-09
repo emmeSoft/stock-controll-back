@@ -1,4 +1,5 @@
 const prisma = require(`../db/database.prisma`);
+const bcrypt = require('bcrypt');
 const ALLOWED_ROLES = ["SUPERADMIN", "ADMIN", "USUARIO"];
 const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
@@ -12,12 +13,19 @@ const create = async (dataEmployee, user) => {
     }
 
     // El empleado se asigna a la tienda del creador (a menos que el creador sea un SUPERADMIN y haya especificado storeId explicitamente)
+    // El middleware authMiddleware inyecta el x-store-id en user.storeId temporalmente si es "SUPERADMIN"
     let assignedStoreId = user.storeId;
     if (user.role === 'SUPERADMIN' && dataEmployee.storeId) {
         assignedStoreId = dataEmployee.storeId;
     }
 
-    const response = await prisma.user.create({ data: { ...dataEmployee, storeId: assignedStoreId } });
+    if (!assignedStoreId) {
+       throw new Error('Debe seleccionar una tienda para asignar al empleado.');
+    }
+
+    const hashedPassword = await bcrypt.hash(dataEmployee.password, 10);
+
+    const response = await prisma.user.create({ data: { ...dataEmployee, password: hashedPassword, storeId: assignedStoreId } });
     console.log('Empleado creado:');
     return response;
 }
@@ -67,6 +75,7 @@ const update = async (id, dataEmployee, user) => {
         "firstName",
         "lastName",
         "email",
+        "password",
         "phoneNumber",
         "address",
         "city",
@@ -82,7 +91,7 @@ const update = async (id, dataEmployee, user) => {
 
     const cleanData = Object.fromEntries(
         Object.entries(dataEmployee).filter(
-            ([key, value]) => allowedFields.includes(key) && value !== undefined
+            ([key, value]) => allowedFields.includes(key) && value !== undefined && value !== ""
         )
     );
 
@@ -92,6 +101,10 @@ const update = async (id, dataEmployee, user) => {
         }
     }
 
+    // Hash password if updating
+    if (cleanData.password) {
+        cleanData.password = await bcrypt.hash(cleanData.password, 10);
+    }
 
     if ("dni" in cleanData) {
         const normalized = normalizeDni(cleanData.dni);
