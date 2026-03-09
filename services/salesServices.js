@@ -3,10 +3,10 @@ const prisma = new PrismaClient();
 const cajaServices = require('./cajaServices');
 
 const create = async (saleData, user) => {
-  const { items, amount, clientId, paymentMethod, storeId } = saleData;
+  const { items, amount, clientId, paymentMethod } = saleData;
 
-  // Determine effective storeId for the sale
-  const effectiveStoreId = user.role === 'SUPERADMIN' ? storeId : user.storeId;
+  // Determine effective storeId for the sale from the user's augmented context
+  const effectiveStoreId = user.storeId;
   if (!effectiveStoreId) {
     throw new Error('Debe especificar una tienda para la venta.');
   }
@@ -40,6 +40,7 @@ const create = async (saleData, user) => {
     const order = await tx.order.create({
       data: {
         storeId: effectiveStoreId,
+        userId: user.id || null,
         cashRegisterId: currentRegister.id,
         clientId: clientId || null,
         amount: amount,
@@ -83,6 +84,7 @@ const getAll = async (user) => {
     orderBy: { createdAt: 'desc' },
     include: {
       client: true,
+      user: true,
       orderDetails: {
         include: {
           product: true
@@ -92,4 +94,27 @@ const getAll = async (user) => {
   });
 };
 
-module.exports = { create, getAll };
+const getById = async (id, user) => {
+  const whereClause = user.storeId ? { id, storeId: user.storeId } : { id };
+  
+  const order = await prisma.order.findFirst({
+    where: whereClause,
+    include: {
+      client: true,
+      user: true,
+      orderDetails: {
+        include: {
+          product: true
+        }
+      }
+    }
+  });
+
+  if (!order) {
+    throw new Error(`Venta con ID ${id} no encontrada`);
+  }
+
+  return order;
+};
+
+module.exports = { create, getAll, getById };

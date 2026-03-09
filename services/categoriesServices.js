@@ -3,6 +3,9 @@ const prisma = require(`../db/database.prisma`)
 
 const create = async (dataCategory, user) => {
     console.log('Creating category...');
+    if (!user.storeId) {
+        throw new Error('Debe seleccionar una tienda para asignar a la categoría.');
+    }
     const response = await prisma.categories.create({ data: { ...dataCategory, storeId: user.storeId } });
     console.log('Category created:');
     return response;
