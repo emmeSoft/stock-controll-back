@@ -57,7 +57,13 @@ const create = async (saleData, user) => {
         }
       },
       include: {
-        orderDetails: true
+        client: true,
+        user: true,
+        orderDetails: {
+          include: {
+            product: true
+          }
+        }
       }
     });
 

@@ -57,6 +57,8 @@ model user {
   profilePicture String?
   role           String   @default("USUARIO") // SUPERADMIN, ADMIN, USUARIO
   isActive       Boolean  @default(true)
+  mustChangePassword Boolean  @default(true)
+  tempPassword   String?  // Guarda el PIN en texto plano solo hasta el primer login
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

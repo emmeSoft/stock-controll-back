@@ -3,6 +3,15 @@ const bcrypt = require('bcrypt');
 const ALLOWED_ROLES = ["SUPERADMIN", "ADMIN", "USUARIO"];
 const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
+const verifyAdminPassword = async (adminId, adminPassword) => {
+    if (!adminPassword) throw new Error("La contraseña del administrador es requerida.");
+    const adminRecord = await prisma.user.findUnique({ where: { id: adminId } });
+    if (!adminRecord) throw new Error("Administrador no encontrado");
+
+    const isAdminPasswordValid = await bcrypt.compare(adminPassword, adminRecord.password);
+    if (!isAdminPasswordValid) throw new Error("Contraseña de administrador incorrecta. Autorización denegada.");
+    return true;
+};
 
 const create = async (dataEmployee, user) => {
     console.log('Creando Empleado...');
@@ -11,6 +20,13 @@ const create = async (dataEmployee, user) => {
     if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
         throw new Error('No tienes permisos para crear un usuario de nivel SUPERADMIN.');
     }
+
+    // Si se crea un ADMIN o SUPERADMIN, verificar contraseña del creador
+    if (dataEmployee.role === 'ADMIN' || dataEmployee.role === 'SUPERADMIN') {
+        await verifyAdminPassword(user.id, dataEmployee.adminPassword);
+    }
+    // Ya validada, quitamos el adminPassword para que no interfiera
+    delete dataEmployee.adminPassword;
 
     // El empleado se asigna a la tienda del creador (a menos que el creador sea un SUPERADMIN y haya especificado storeId explicitamente)
     // El middleware authMiddleware inyecta el x-store-id en user.storeId temporalmente si es "SUPERADMIN"
@@ -23,11 +39,24 @@ const create = async (dataEmployee, user) => {
        throw new Error('Debe seleccionar una tienda para asignar al empleado.');
     }
 
-    const hashedPassword = await bcrypt.hash(dataEmployee.password, 10);
+    // Generar un PIN aleatorio de 4 dígitos
+    const tempPin = Math.floor(1000 + Math.random() * 9000).toString();
+    const hashedPassword = await bcrypt.hash(tempPin, 10);
 
-    const response = await prisma.user.create({ data: { ...dataEmployee, password: hashedPassword, storeId: assignedStoreId } });
-    console.log('Empleado creado:');
-    return response;
+    // No tomamos `dataEmployee.password` enviado por frontend (se ignorará si lo mandan)
+    delete dataEmployee.password;
+
+    const response = await prisma.user.create({ 
+        data: { 
+            ...dataEmployee, 
+            password: hashedPassword, 
+            tempPassword: tempPin,
+            mustChangePassword: true,
+            storeId: assignedStoreId 
+        } 
+    });
+    console.log(`Empleado creado con PIN temporal: ${tempPin}`);
+    return { ...response, generatedPin: tempPin }; // Retornamos el PIN para que el frontend lo vea
 }
 
 const getAll = async (user) => {
@@ -69,6 +98,11 @@ const update = async (id, dataEmployee, user) => {
     if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
         throw new Error('No tienes permisos para otorgar nivel SUPERADMIN.');
     }
+
+    if (dataEmployee.role && dataEmployee.role !== existing.role) {
+        await verifyAdminPassword(user.id, dataEmployee.adminPassword);
+    }
+
     const allowedFields = [
         "name",
         "fullName",
@@ -169,7 +203,39 @@ const setActiveStatus = async (id, isActive, user) => {
 
     return response;
 }
+const resetPassword = async (employeeId, adminPassword, adminUser) => {
+    // 1. Verificar la contraseña del administrador
+    await verifyAdminPassword(adminUser.id, adminPassword);
 
+    // 2. Buscar al empleado a blanquear
+    const whereClause = adminUser.storeId ? { id: employeeId, storeId: adminUser.storeId } : { id: employeeId };
+    const employeeRecord = await prisma.user.findFirst({ where: whereClause });
+    if (!employeeRecord) throw new Error("Empleado no encontrado o no pertenece a tu tienda.");
 
+    // No se puede blanquear un superadmin por este medio
+    if (employeeRecord.role === 'SUPERADMIN' && adminUser.role !== 'SUPERADMIN') {
+        throw new Error("No tienes permisos para blanquear la clave de un SUPERADMIN.");
+    }
 
-module.exports = { create, getAll, getById, update, setActiveStatus };
+    // 3. Generar nuevo PIN y actualizar
+    const newTempPin = Math.floor(1000 + Math.random() * 9000).toString();
+    const hashedPassword = await bcrypt.hash(newTempPin, 10);
+
+    const updatedEmployee = await prisma.user.update({
+        where: { id: employeeId },
+        data: {
+            password: hashedPassword,
+            tempPassword: newTempPin,
+            mustChangePassword: true
+        }
+    });
+
+    console.log(`Clave blanqueada para ${updatedEmployee.email}. Nuevo PIN: ${newTempPin}`);
+    return { 
+        message: "Clave blanqueada exitosamente.", 
+        newPin: newTempPin,
+        employeeEmail: updatedEmployee.email 
+    };
+};
+
+module.exports = { create, getAll, getById, update, setActiveStatus, resetPassword };
