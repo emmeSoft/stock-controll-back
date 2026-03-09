@@ -60,5 +60,20 @@ const toggleActiveStatus = async (req, res) => {
     res.status(401).json({ message: error.message });
   }
 }
+const resetPassword = async (req, res) => {
+  const { id } = req.params;
+  const { adminPassword } = req.body;
 
-module.exports = { createEmployee, getAllEmployees, getEmployeeById, updateEmployee, toggleActiveStatus };
+  if (!adminPassword) {
+    return res.status(400).json({ message: "La contraseña del administrador es requerida." });
+  }
+
+  try {
+    const result = await employeeServices.resetPassword(id, adminPassword, req.user);
+    res.json(result);
+  } catch (error) {
+    res.status(401).json({ message: error.message });
+  }
+};
+
+module.exports = { createEmployee, getAllEmployees, getEmployeeById, updateEmployee, toggleActiveStatus, resetPassword };

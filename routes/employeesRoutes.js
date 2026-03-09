@@ -9,5 +9,6 @@ router.get('/', authMiddleware, requireRole(['SUPERADMIN', 'ADMIN']), employeeCo
 router.get('/:id', authMiddleware, requireRole(['SUPERADMIN', 'ADMIN']), employeeController.getEmployeeById);
 router.put('/:id', authMiddleware, requireRole(['SUPERADMIN', 'ADMIN']), employeeController.updateEmployee);
 router.put('/:id/active', authMiddleware, requireRole(['SUPERADMIN', 'ADMIN']), employeeController.toggleActiveStatus);
+router.put('/:id/reset-pin', authMiddleware, requireRole(['SUPERADMIN', 'ADMIN']), employeeController.resetPassword);
 
 module.exports = router;
