@@ -17,6 +17,14 @@ enum MovementType {
   EXPENSE
 }
 
+enum StockMovementType {
+  SALE
+  MANUAL_ADJUSTMENT
+  PURCHASE
+  RETURN
+  INITIAL
+}
+
 enum Role {
   SUPERADMIN
   ADMIN
@@ -41,6 +49,7 @@ model store {
   payments      payment[]
   cashRegisters CashRegister[]
   cashMovements CashMovement[]
+  stockHistories StockHistory[]
 }
 
 model user {
@@ -69,6 +78,7 @@ model user {
   closedCashRegisters CashRegister[] @relation("ClosedCashRegisters")
   cashMovements       CashMovement[]
   orders              order[]
+  stockHistories      StockHistory[]
 }
 
 model client {
@@ -169,6 +179,7 @@ model product {
   category     categories?   @relation(fields: [categoryId], references: [id])
   orderDetails orderDetail[]
   Image        Image[]
+  stockHistories StockHistory[]
 }
 
 model orderDetail {
@@ -274,4 +285,21 @@ model CashMovement {
   store        store        @relation(fields: [storeId], references: [id])
   cashRegister CashRegister @relation(fields: [cashRegisterId], references: [id])
   user         user         @relation(fields: [userId], references: [id])
+}
+
+model StockHistory {
+  id             String            @id @default(cuid())
+  storeId        String
+  productId      String
+  userId         String?
+  type           StockMovementType
+  previousStock  Int
+  movementAmount Int
+  currentStock   Int
+  description    String?           @db.Text
+  createdAt      DateTime          @default(now())
+
+  store          store             @relation(fields: [storeId], references: [id])
+  product        product           @relation(fields: [productId], references: [id])
+  user           user?             @relation(fields: [userId], references: [id])
 }
