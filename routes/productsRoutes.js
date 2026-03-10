@@ -9,6 +9,7 @@ router.get('/', authMiddleware, productsController.getAllProducts);
 router.get('/:id', authMiddleware, productsController.getProductById);
 router.put('/:id', authMiddleware, productsController.updateProduct);
 router.put('/:id/active', authMiddleware, productsController.toggleActiveStatus);
+router.put('/:id/stock', authMiddleware, productsController.adjustStock);
 
 module.exports = router;
         

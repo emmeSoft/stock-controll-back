@@ -29,6 +29,21 @@ const create = async (dataProduct, user) => {
         }
     });
 
+    if (stock > 0) {
+        await prisma.stockHistory.create({
+            data: {
+                storeId: user.storeId,
+                productId: response.id,
+                userId: user.id || null,
+                type: 'INITIAL',
+                previousStock: 0,
+                movementAmount: stock,
+                currentStock: stock,
+                description: 'Carga inicial del producto'
+            }
+        });
+    }
+
     console.log('Product created:');
     return response;
 }
@@ -130,6 +145,22 @@ const update = async (id, dataProduct, user) => {
         }
     });
 
+    if ("stock" in cleanData && cleanData.stock !== existingProduct.stock) {
+        const difference = cleanData.stock - existingProduct.stock;
+        await prisma.stockHistory.create({
+            data: {
+                storeId: existingProduct.storeId,
+                productId: id,
+                userId: user.id || null,
+                type: 'MANUAL_ADJUSTMENT',
+                previousStock: existingProduct.stock,
+                movementAmount: difference,
+                currentStock: cleanData.stock,
+                description: 'Ajuste manual de stock desde el panel'
+            }
+        });
+    }
+
     return response;
 };
 
@@ -148,4 +179,47 @@ const setActiveStatus = async (id, isActive, user) => {
     return response;
 }
 
-module.exports = { create, getAll, getById, update, setActiveStatus };
+const adjustStock = async (id, amount, description, user) => {
+    console.log(`Adjusting stock for product ID: ${id} by ${amount}`);
+    
+    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    
+    return await prisma.$transaction(async (tx) => {
+        const existingProduct = await tx.product.findFirst({ where: whereClause });
+        if (!existingProduct) throw new Error(`Product with ID ${id} not found or access denied`);
+
+        const newStock = existingProduct.stock + amount;
+        if (newStock < 0) {
+            throw new Error(`El ajuste resulta en stock negativo. Stock actual: ${existingProduct.stock}`);
+        }
+
+        const updatedProduct = await tx.product.update({
+            where: { id },
+            data: { stock: newStock },
+            include: {
+                category: {
+                    select: {
+                        name: true
+                    }
+                }
+            }
+        });
+
+        await tx.stockHistory.create({
+            data: {
+                storeId: existingProduct.storeId,
+                productId: id,
+                userId: user.id || null,
+                type: 'MANUAL_ADJUSTMENT',
+                previousStock: existingProduct.stock,
+                movementAmount: amount,
+                currentStock: newStock,
+                description: description
+            }
+        });
+
+        return updatedProduct;
+    });
+};
+
+module.exports = { create, getAll, getById, update, setActiveStatus, adjustStock };

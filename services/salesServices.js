@@ -26,6 +26,8 @@ const create = async (saleData, user) => {
       const product = await tx.product.findFirst({
         where: productWhere
       });
+      // Guardamos la información del stock anterior en el item para usarla después
+      item.previousStock = product ? product.stock : 0;
 
       if (!product) {
         throw new Error(`Producto con ID ${item.id} no encontrado`);
@@ -69,12 +71,25 @@ const create = async (saleData, user) => {
 
     // 3. Deduct stock and record payments if required (simplifying as requested)
     for (const item of items) {
-      await tx.product.update({
+      const updatedProduct = await tx.product.update({
         where: { id: item.id },
         data: {
           stock: {
             decrement: item.quantity
           }
+        }
+      });
+
+      await tx.stockHistory.create({
+        data: {
+            storeId: effectiveStoreId,
+            productId: item.id,
+            userId: user.id || null,
+            type: 'SALE',
+            previousStock: item.previousStock,
+            movementAmount: -item.quantity,
+            currentStock: updatedProduct.stock,
+            description: `Venta POS #${order.id.slice(-6)}`
         }
       });
     }
@@ -101,7 +116,7 @@ const getAll = async (user) => {
 };
 
 const getById = async (id, user) => {
-  const whereClause = user.storeId ? { id, storeId: user.storeId } : { id };
+  const whereClause = user.storeId ? { id: { endsWith: id }, storeId: user.storeId } : { id: { endsWith: id } };
   
   const order = await prisma.order.findFirst({
     where: whereClause,

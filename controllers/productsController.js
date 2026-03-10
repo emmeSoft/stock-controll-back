@@ -65,4 +65,24 @@ const toggleActiveStatus = async (req, res) => {
   }
 };
 
-module.exports = { createProduct, getAllProducts, getProductById, updateProduct, toggleActiveStatus };
+const adjustStock = async (req, res) => {
+  const { id } = req.params;
+  const { amount, description } = req.body;
+
+  if (amount === undefined || typeof amount !== 'number') {
+    return res.status(400).json({ message: "La cantidad (amount) es obligatoria y debe ser un número" });
+  }
+
+  if (!description || typeof description !== 'string' || description.trim() === '') {
+    return res.status(400).json({ message: "El motivo (description) es obligatorio" });
+  }
+
+  try {
+    const result = await productsServices.adjustStock(id, amount, description, req.user);
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+module.exports = { createProduct, getAllProducts, getProductById, updateProduct, toggleActiveStatus, adjustStock };
