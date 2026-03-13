@@ -47,10 +47,11 @@ const getGlobalHistory = async (req, res) => {
 
 const getAllRegisters = async (req, res) => {
   try {
-    const result = await cajaServices.getAllRegisters(req.user);
+    const result = await cajaServices.getAllRegisters(req.user, req.query);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    const statusCode = error.message.includes('máximo') ? 400 : 400;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 

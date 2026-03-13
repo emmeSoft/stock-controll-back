@@ -1,6 +1,37 @@
 const prisma = require('../db/database.prisma');
 const bcrypt = require('bcrypt');
 
+const MAX_DAYS = 30;
+const DEFAULT_DAYS = 7;
+
+function buildDateRange(startDate, endDate) {
+    const now = new Date();
+    let start, end;
+
+    if (startDate) {
+        start = new Date(`${startDate}T00:00:00`);
+    } else {
+        start = new Date(now);
+        start.setDate(start.getDate() - DEFAULT_DAYS);
+        start.setHours(0, 0, 0, 0);
+    }
+
+    if (endDate) {
+        end = new Date(`${endDate}T23:59:59.999`);
+    } else {
+        end = new Date(now);
+        end.setHours(23, 59, 59, 999);
+    }
+
+    // Validate range (max 30 days)
+    const diffDays = (end - start) / (1000 * 60 * 60 * 24);
+    if (diffDays > MAX_DAYS) {
+        return { error: `El período máximo permitido es de ${MAX_DAYS} días.` };
+    }
+
+    return { start, end };
+}
+
 const openRegister = async (data, user) => {
     const { openingAmount, password } = data;
 
@@ -163,8 +194,14 @@ const getGlobalHistory = async (user) => {
     return unified;
 };
 
-const getAllRegisters = async (user) => {
-    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+const getAllRegisters = async (user, query = {}) => {
+    const { startDate, endDate } = query;
+    const range = buildDateRange(startDate, endDate);
+
+    const whereClause = {
+        ...(user.storeId ? { storeId: user.storeId } : {}),
+        openedAt: { gte: range.start, lte: range.end },
+    };
 
     const registers = await prisma.cashRegister.findMany({
         where: whereClause,
