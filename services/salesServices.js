@@ -11,6 +11,16 @@ const create = async (saleData, user) => {
     throw new Error('Debe especificar una tienda para la venta.');
   }
 
+  // VERIFICAR CLIENTE ACTIVO -> Regla de negocio.
+  if (clientId) {
+    const client = await prisma.client.findFirst({
+      where: { id: clientId, storeId: effectiveStoreId }
+    });
+    if (client && client.isActive === false) {
+      throw new Error('No se puede registrar la venta: El cliente seleccionado se encuentra dado de baja.');
+    }
+  }
+
   // VERIFICAR CAJA ABIERTA -> Regla de negocio.
   // We need to pass a mock user object with the effectiveStoreId for the check
   const currentRegister = await cajaServices.getCurrentRegister({ ...user, storeId: effectiveStoreId });

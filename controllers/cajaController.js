@@ -38,10 +38,10 @@ const getRegisterHistory = async (req, res) => {
 
 const getGlobalHistory = async (req, res) => {
   try {
-    const result = await cajaServices.getGlobalHistory(req.user);
+    const result = await cajaServices.getGlobalHistory(req.user, req.query);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(500).json({ message: error.message });
   }
 };
 

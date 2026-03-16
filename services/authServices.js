@@ -12,6 +12,10 @@ const loginUser = async (email, password) => {
     throw new Error('Credenciales incorrectas desde el backend');
   }
 
+  if (user.isActive === false) {
+    throw new Error('Tu cuenta se encuentra dada de baja. Por favor, contacta al administrador.');
+  }
+
   const isPasswordValid = await bcrypt.compare(password, user.password);
 
   if (!isPasswordValid) {

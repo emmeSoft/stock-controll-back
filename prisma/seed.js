@@ -4,10 +4,25 @@ const bcrypt = require('bcrypt');
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('Iniciando carga de datos de prueba para MÚLTIPLES TIENDAS...');
+/* ===============================
+   BARCODE ENGINE
+=================================*/
 
-  // 1. Definimos las tiendas que queremos crear y sus administradores
+// genera prefijo 3 dígitos
+function generateCategoryPrefix(index) {
+  return String(100 + index); // 100,101,102...
+}
+
+// genera barcode 9 dígitos
+function generateBarcode(prefix, sequence) {
+  return `${prefix}${String(sequence).padStart(6, '0')}`;
+}
+
+async function main() {
+  console.log('🌱 Seed multi-tenant iniciado');
+
+  const hashedPassword = await bcrypt.hash('123456', 10);
+
   const storesConfig = [
     {
       storeName: 'Supermercado Central',
@@ -26,118 +41,118 @@ async function main() {
     }
   ];
 
-    // Contraseña común para todos los usuarios de prueba
-  const hashedPassword = await bcrypt.hash('123456', 10);
-
-  // 2. Usamos un bucle "for...of" para recorrer nuestra lista de configuraciones.
-  // IMPORTANTE: Un bucle "for...of" es ideal en programación asíncrona (cuando usamos "await"),
-  // porque espera a que termine de procesar una tienda antes de pasar a la siguiente.
   for (const config of storesConfig) {
-    console.log(`\n--- Configurando Tienda: ${config.storeName} ---`);
 
-    // -> Crear la tienda
-    const store = await prisma.store.create({
-      data: {
-        name: config.storeName,
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number({ style: 'national' }),
-        isActive: true,
-      },
+    await prisma.$transaction(async (tx) => {
+
+      console.log(`\n🏪 ${config.storeName}`);
+
+      /* ========= STORE ========= */
+
+      const store = await tx.store.create({
+        data: {
+          name: config.storeName,
+          address: faker.location.streetAddress(),
+          phone: faker.phone.number(),
+        },
+      });
+
+      /* ========= USERS ========= */
+
+      const createUser = (email, role) =>
+        tx.user.create({
+          data: {
+            storeId: store.id,
+            email,
+            password: hashedPassword,
+            tempPassword: "0000",
+            mustChangePassword: true,
+            firstName: faker.person.firstName(),
+            lastName: faker.person.lastName(),
+            phoneNumber: faker.phone.number(),
+            address: faker.location.streetAddress(),
+            city: faker.location.city(),
+            role,
+          },
+        });
+
+      await createUser(config.adminEmail, 'ADMIN');
+      await createUser(config.userEmail, 'USUARIO');
+
+      /* ========= CATEGORIES ========= */
+
+      const categories = [];
+
+      for (let i = 0; i < 3; i++) {
+        const category = await tx.categories.create({
+          data: {
+            storeId: store.id,
+            name: faker.commerce.department(),
+            description: faker.commerce.productDescription(),
+            barcodePrefix: generateCategoryPrefix(i),
+          },
+        });
+
+        categories.push(category);
+      }
+
+      /* ========= PRODUCTS ========= */
+
+      let globalSequence = 1;
+
+      const products = [];
+
+      for (const category of categories) {
+        for (let i = 0; i < 3; i++) {
+
+          const barcode = generateBarcode(
+            category.barcodePrefix,
+            globalSequence++
+          );
+
+          products.push({
+            storeId: store.id,
+            name: faker.commerce.productName(),
+            description: faker.commerce.productDescription(),
+            price: Number(faker.commerce.price({ min: 100, max: 2000 })),
+            stock: faker.number.int({ min: 10, max: 100 }),
+            categoryId: category.id,
+            barcode,
+            isActive: true,
+          });
+        }
+      }
+
+      await tx.product.createMany({ data: products });
+
+      /* ========= CLIENTS ========= */
+
+      const clients = Array.from({ length: 5 }).map(() => {
+        const firstName = faker.person.firstName();
+        const lastName = faker.person.lastName();
+
+        return {
+          storeId: store.id,
+          email: faker.internet.email({ firstName, lastName }),
+          firstName,
+          lastName,
+          fullName: `${firstName} ${lastName}`,
+          dni: faker.string.numeric(8),
+          phoneNumber: faker.phone.number(),
+          address: faker.location.streetAddress(),
+          city: faker.location.city(),
+        };
+      });
+
+      await tx.client.createMany({ data: clients });
+
+      console.log('✅ Store completa creada');
     });
-    console.log(`✅ Tienda creada con ID: ${store.id}`);
-
-    // -> Crear un usuario ADMIN para esta tienda
-    await prisma.user.create({
-      data: {
-        storeId: store.id,
-        email: config.adminEmail,
-        password: hashedPassword,
-        tempPassword: "0000",
-        mustChangePassword: true,
-        firstName: faker.person.firstName(),
-        lastName: faker.person.lastName(),
-        phoneNumber: faker.phone.number({ style: 'national' }),
-        address: faker.location.streetAddress(),
-        city: faker.location.city(),
-        role: 'ADMIN',
-      },
-    });
-    console.log(`✅ Admin creado: ${config.adminEmail} (Clave: 123456 - Cambio forzado)`);
-
-    // -> Crear un usuario normal (USUARIO) para esta tienda
-    await prisma.user.create({
-      data: {
-        storeId: store.id,
-        email: config.userEmail,
-        password: hashedPassword,
-        tempPassword: "0000",
-        mustChangePassword: true,
-        firstName: faker.person.firstName(),
-        lastName: faker.person.lastName(),
-        phoneNumber: faker.phone.number({ style: 'national' }),
-        address: faker.location.streetAddress(),
-        city: faker.location.city(),
-        role: 'USUARIO',
-      },
-    });
-    console.log(`✅ Cajero/Usuario creado: ${config.userEmail} (Clave: 123456 - Cambio forzado)`);
-
-    // -> Crear 3 Categorías para esta tienda
-    const categoriesToCreate = Array.from({ length: 3 }).map(() => ({
-      storeId: store.id,
-      name: faker.commerce.department(),
-      description: faker.commerce.productDescription(),
-    }));
-    await prisma.categories.createMany({ data: categoriesToCreate });
-
-    // Obtenemos las categorías de la BD para sacar sus IDs y asignarlas a los productos
-    const storeCategories = await prisma.categories.findMany({ where: { storeId: store.id } });
-
-    // -> Crear 10 Productos asignados EXCLUSIVAMENTE a esta tienda y a sus categorías
-    const productsToCreate = Array.from({ length: 10 }).map(() => ({
-      storeId: store.id,
-      name: faker.commerce.productName(),
-      description: faker.commerce.productDescription(),
-      price: parseFloat(faker.commerce.price({ min: 100, max: 2000 })),
-      stock: faker.number.int({ min: 10, max: 100 }),
-      categoryId: faker.helpers.arrayElement(storeCategories).id,
-      isActive: true,
-    }));
-    await prisma.product.createMany({ data: productsToCreate });
-    console.log(`✅ 3 Categorías y 10 Productos creados para ${config.storeName}`);
-
-    // -> Crear 5 Clientes exclusivos de esta tienda
-    const clientsToCreate = Array.from({ length: 5 }).map(() => {
-      const firstName = faker.person.firstName();
-      const lastName = faker.person.lastName();
-      return {
-        storeId: store.id,
-        email: faker.internet.email({ firstName, lastName }),
-        firstName,
-        lastName,
-        fullName: `${firstName} ${lastName}`,
-        dni: faker.string.numeric(8),
-        phoneNumber: faker.phone.number({ style: 'national' }),
-        address: faker.location.streetAddress(),
-        city: faker.location.city(),
-      };
-    });
-    await prisma.client.createMany({ data: clientsToCreate });
-    console.log(`✅ 5 Clientes creados para ${config.storeName}`);
   }
 
-  console.log('\n======================================================');
-  console.log('¡Datos de prueba MASIVOS generados correctamente!');
-  console.log('Ahora tienes TIENDAS completamente separadas con sus');
-  console.log('propios productos, clientes, administradores y empleados.');
-  console.log('======================================================\n');
+  console.log('\n✅ SEED FINALIZADO CORRECTAMENTE');
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .catch(console.error)
+  .finally(() => prisma.$disconnect());

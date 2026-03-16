@@ -167,11 +167,24 @@ const getRegisterHistory = async (user) => {
     return unified;
 };
 
-const getGlobalHistory = async (user) => {
-    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+const getGlobalHistory = async (user, query = {}) => {
+    const { startDate, endDate } = query;
+    const range = buildDateRange(startDate, endDate);
+
+    if (range.error) {
+        throw new Error(range.error);
+    }
+
+    const whereClause = {
+        ...(user.storeId ? { storeId: user.storeId } : {}),
+        createdAt: { gte: range.start, lte: range.end }
+    };
 
     const orders = await prisma.order.findMany({
-        where: whereClause,
+        where: {
+            ...whereClause,
+            orderDate: { gte: range.start, lte: range.end } // Specifically for orders if orderDate is preferred
+        },
         include: { 
             user: true, 
             client: true,
