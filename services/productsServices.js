@@ -20,11 +20,34 @@ const create = async (dataProduct, user) => {
         throw new Error('Debe seleccionar una tienda para asignar al producto.');
     }
 
+    // Generate 9-digit barcode
+    let barcode;
+    if (dataProduct.categoryId) {
+        const category = await prisma.categories.findUnique({
+            where: { id: dataProduct.categoryId }
+        });
+        if (category && category.barcodePrefix) {
+            let isUnique = false;
+            let attempts = 0;
+            while (!isUnique && attempts < 50) {
+                const suffix = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+                barcode = category.barcodePrefix + suffix;
+                const existing = await prisma.product.findFirst({
+                    where: { barcode, storeId: user.storeId }
+                });
+                if (!existing) isUnique = true;
+                attempts++;
+            }
+            if (!isUnique) throw new Error("No se pudo generar un código de barras único.");
+        }
+    }
+
     const response = await prisma.product.create({
         data: {
             ...dataProduct,
             price,
             stock,
+            barcode,
             storeId: user.storeId
         }
     });
@@ -48,10 +71,13 @@ const create = async (dataProduct, user) => {
     return response;
 }
 
-const getAll = async (user) => {
-    console.log('Fetching all products...');
+const getAll = async (user, filters = {}) => {
+    console.log('Fetching all products with filters:', filters);
 
-    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+    const whereClause = {
+        ...(user.storeId ? { storeId: user.storeId } : {}),
+        ...(filters.categoryId ? { categoryId: filters.categoryId } : {})
+    };
 
     const response = await prisma.product.findMany(
         {
@@ -118,6 +144,32 @@ const update = async (id, dataProduct, user) => {
         )
     );
 
+    // Si cambió la categoría, regenerar el código de barras
+    if (cleanData.categoryId && cleanData.categoryId !== existingProduct.categoryId) {
+        const category = await prisma.categories.findUnique({
+            where: { id: cleanData.categoryId }
+        });
+        if (category && category.barcodePrefix) {
+            let barcode;
+            let isUnique = false;
+            let attempts = 0;
+            while (!isUnique && attempts < 50) {
+                const suffix = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+                barcode = category.barcodePrefix + suffix;
+                const existing = await prisma.product.findFirst({
+                    where: { barcode, storeId: existingProduct.storeId }
+                });
+                if (!existing) isUnique = true;
+                attempts++;
+            }
+            if (isUnique) {
+                cleanData.barcode = barcode;
+            } else {
+                throw new Error("No se pudo generar un nuevo código de barras único para la nueva categoría.");
+            }
+        }
+    }
+
     if ("price" in cleanData) {
         cleanData.price = parseFloat(cleanData.price);
     }
@@ -173,8 +225,22 @@ const setActiveStatus = async (id, isActive, user) => {
 
     const response = await prisma.product.update({
         where: { id },
-        data: { isActive }
+        data: { isActive },
+        include: { category: true }
     });
+
+    // Validar que la categoría esté activa si se intenta dar de alta el producto
+    if (isActive === true && response.categoryId) {
+        if (response.category && response.category.isActive === false) {
+            // Revertir el estado del producto si la categoría está inactiva
+            await prisma.product.update({
+                where: { id },
+                data: { isActive: false }
+            });
+            throw new Error(`No se puede dar de alta el producto porque su categoría (${response.category.name}) está dada de baja. Por favor, dé de alta la categoría primero.`);
+        }
+    }
+
     console.log(`Product ${isActive ? "enabled" : "disabled"}:`);
     return response;
 }

@@ -156,6 +156,8 @@ model categories {
   profilePicture String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  barcodePrefix  String?  @db.VarChar(3)
+  isActive       Boolean  @default(true)
 
   store    store     @relation(fields: [storeId], references: [id])
   products product[]
@@ -173,6 +175,7 @@ model product {
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  barcode        String?  @unique @db.VarChar(9)
   categoryId     String?
 
   store        store         @relation(fields: [storeId], references: [id])

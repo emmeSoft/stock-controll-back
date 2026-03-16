@@ -187,8 +187,11 @@ const update = async (id, dataEmployee, user) => {
     return response;
 }
 
-const setActiveStatus = async (id, isActive, user) => {
+const setActiveStatus = async (id, isActive, adminPassword, user) => {
     console.log(`${isActive ? "Habilitando" : "Deshabilitando"} empleado con ID: ${id}`);
+    
+    // 1. Verificar la contraseña del administrador obligatoriamente
+    await verifyAdminPassword(user.id, adminPassword);
     
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const existing = await prisma.user.findFirst({ where: whereClause });
