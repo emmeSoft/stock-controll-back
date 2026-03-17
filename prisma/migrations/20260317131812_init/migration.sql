@@ -107,7 +107,9 @@ CREATE TABLE `categories` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `barcodePrefix` VARCHAR(3) NULL,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
 
+    UNIQUE INDEX `categories_storeId_barcodePrefix_key`(`storeId`, `barcodePrefix`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -126,7 +128,7 @@ CREATE TABLE `product` (
     `barcode` VARCHAR(9) NULL,
     `categoryId` VARCHAR(191) NULL,
 
-    UNIQUE INDEX `product_barcode_key`(`barcode`),
+    UNIQUE INDEX `product_storeId_barcode_key`(`storeId`, `barcode`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
