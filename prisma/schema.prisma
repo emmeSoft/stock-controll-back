@@ -162,6 +162,8 @@ model categories {
   store    store     @relation(fields: [storeId], references: [id])
   products product[]
   Image    Image[]
+  @@unique([storeId, barcodePrefix])
+
 }
 
 model product {
@@ -175,7 +177,7 @@ model product {
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  barcode        String?  @unique @db.VarChar(9)
+  barcode        String?  @db.VarChar(9)
   categoryId     String?
 
   store        store         @relation(fields: [storeId], references: [id])
@@ -183,6 +185,8 @@ model product {
   orderDetails orderDetail[]
   Image        Image[]
   stockHistories StockHistory[]
+
+  @@unique([storeId, barcode])
 }
 
 model orderDetail {
