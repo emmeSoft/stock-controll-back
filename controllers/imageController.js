@@ -148,4 +148,83 @@ const setMainImage = async (req, res) => {
   }
 };
 
-module.exports = { uploadImage, setMainImage };
+const deleteImage = async (req, res) => {
+  try {
+    const { imageId } = req.params;
+
+    if (!imageId) {
+      return res.status(400).json({ message: "Image ID is required" });
+    }
+
+    // 1. Buscar la imagen a eliminar
+    const image = await prisma.image.findUnique({ where: { id: imageId } });
+
+    if (!image) {
+      return res.status(404).json({ message: "Image not found" });
+    }
+
+    // 2. Determinar a qué entidad pertenece
+    const entityKeys = ["productId", "userId", "clientId", "supplierId", "categoryId"];
+    let entityKey = null;
+    let entityId = null;
+
+    for (const key of entityKeys) {
+      if (image[key]) {
+        entityKey = key;
+        entityId = image[key];
+        break;
+      }
+    }
+
+    // 3. Eliminar la imagen de la DB
+    await prisma.image.delete({ where: { id: imageId } });
+
+    // 4. Si era la principal, promover la siguiente
+    if (image.isMain && entityKey && entityId) {
+      let entityModel = entityKey.replace("Id", "");
+      if (entityModel === "category") {
+        entityModel = "categories";
+      }
+
+      const remainingImages = await prisma.image.findMany({
+        where: { [entityKey]: entityId },
+        orderBy: { order: "asc" },
+      });
+
+      if (remainingImages.length > 0) {
+        // Promover la primera imagen restante como principal
+        await prisma.image.update({
+          where: { id: remainingImages[0].id },
+          data: { isMain: true, order: 0 },
+        });
+
+        // Reordenar las demás
+        for (let i = 1; i < remainingImages.length; i++) {
+          await prisma.image.update({
+            where: { id: remainingImages[i].id },
+            data: { order: i },
+          });
+        }
+
+        // Actualizar profilePicture de la entidad
+        await prisma[entityModel].update({
+          where: { id: entityId },
+          data: { profilePicture: remainingImages[0].url },
+        });
+      } else {
+        // No quedan imágenes, limpiar profilePicture
+        await prisma[entityModel].update({
+          where: { id: entityId },
+          data: { profilePicture: null },
+        });
+      }
+    }
+
+    res.status(200).json({ message: "Image deleted successfully" });
+  } catch (err) {
+    console.error("Delete image error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+module.exports = { uploadImage, setMainImage, deleteImage };
