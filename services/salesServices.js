@@ -3,13 +3,27 @@ const prisma = new PrismaClient();
 const cajaServices = require('./cajaServices');
 
 const create = async (saleData, user) => {
-  const { items, amount, clientId, paymentMethod } = saleData;
+  const { items, amount, clientId, paymentBreakdown } = saleData;
 
   // Determine effective storeId for the sale from the user's augmented context
   const effectiveStoreId = user.storeId;
   if (!effectiveStoreId) {
     throw new Error('Debe especificar una tienda para la venta.');
   }
+
+  // Validate payment breakdown
+  if (!paymentBreakdown || paymentBreakdown.length === 0) {
+    throw new Error('Debe ingresar al menos un medio de pago.');
+  }
+  const totalPaid = paymentBreakdown.reduce((sum, p) => sum + p.amount, 0);
+  if (Math.abs(totalPaid - amount) > 0.01) {
+    throw new Error(`El total pagado (${totalPaid}) no coincide con el total de la venta (${amount}).`);
+  }
+
+  // Derive a summary paymentMethod string for the order
+  const paymentMethodSummary = paymentBreakdown.length > 1
+    ? 'COMBINADO'
+    : paymentBreakdown[0].method;
 
   // VERIFICAR CLIENTE ACTIVO -> Regla de negocio.
   if (clientId) {
@@ -22,7 +36,6 @@ const create = async (saleData, user) => {
   }
 
   // VERIFICAR CAJA ABIERTA -> Regla de negocio.
-  // We need to pass a mock user object with the effectiveStoreId for the check
   const currentRegister = await cajaServices.getCurrentRegister({ ...user, storeId: effectiveStoreId });
   if (!currentRegister) {
     throw new Error('No se puede registrar la venta: Debes abrir una caja primero en esta tienda.');
@@ -56,8 +69,8 @@ const create = async (saleData, user) => {
         cashRegisterId: currentRegister.id,
         clientId: clientId || null,
         amount: amount,
-        amoutPayed: amount, // Assuming full payment at POS for now
-        paymentMethod: paymentMethod || "Efectivo",
+        amoutPayed: amount,
+        paymentMethod: paymentMethodSummary,
         status: "completed",
         statusPayment: "paid",
         orderDetails: {
@@ -79,7 +92,18 @@ const create = async (saleData, user) => {
       }
     });
 
-    // 3. Deduct stock and record payments if required (simplifying as requested)
+    // 3. Create OrderPayment records (one per payment method)
+    for (const payment of paymentBreakdown) {
+      await tx.orderPayment.create({
+        data: {
+          orderId: order.id,
+          paymentMethod: payment.method,
+          amount: payment.amount
+        }
+      });
+    }
+
+    // 4. Deduct stock and record history
     for (const item of items) {
       const updatedProduct = await tx.product.update({
         where: { id: item.id },
@@ -104,7 +128,8 @@ const create = async (saleData, user) => {
       });
     }
 
-    return order;
+    // Return order with payment breakdown
+    return { ...order, orderPayments: paymentBreakdown };
   });
 };
 
@@ -120,7 +145,8 @@ const getAll = async (user) => {
         include: {
           product: true
         }
-      }
+      },
+      orderPayments: true
     }
   });
 };
@@ -137,7 +163,8 @@ const getById = async (id, user) => {
         include: {
           product: true
         }
-      }
+      },
+      orderPayments: true
     }
   });
 

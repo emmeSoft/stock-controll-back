@@ -4,6 +4,59 @@ const streamifier = require("streamifier");
 const e = require("express");
 const { reverseTranslate } = require("../utils/translator");
 
+/**
+ * Asegura que una entidad tenga exactamente una imagen principal y que
+ * el campo profilePicture esté sincronizado.
+ */
+const ensureEntityHasMainImage = async (entityModel, entityId, entityKey) => {
+  try {
+    const images = await prisma.image.findMany({
+      where: { [entityKey]: entityId },
+      orderBy: [
+        { isMain: "desc" },
+        { order: "asc" },
+        { createdAt: "asc" },
+      ],
+    });
+
+    if (images.length === 0) {
+      await prisma[entityModel].update({
+        where: { id: entityId },
+        data: { profilePicture: null },
+      });
+      return;
+    }
+
+    const newMain = images[0];
+
+    // Promover si no es main
+    if (!newMain.isMain) {
+      await prisma.image.update({
+        where: { id: newMain.id },
+        data: { isMain: true, order: 0 },
+      });
+    }
+
+    // Limpiar otros mains si existieran
+    await prisma.image.updateMany({
+      where: {
+        [entityKey]: entityId,
+        id: { not: newMain.id },
+        isMain: true,
+      },
+      data: { isMain: false },
+    });
+
+    // Sincronizar profilePicture
+    await prisma[entityModel].update({
+      where: { id: entityId },
+      data: { profilePicture: newMain.url },
+    });
+  } catch (err) {
+    console.error(`Error in ensureEntityHasMainImage for ${entityModel}:`, err);
+  }
+};
+
 const uploadImage = async (req, res) => {
   try {
     if (!req.file) {
@@ -60,17 +113,8 @@ const uploadImage = async (req, res) => {
       },
     });
 
-    // 4. Si la entidad no tiene profilePicture, setear la primera automáticamente
-    const existing = await prisma[entityModel].findUnique({
-      where: { id: entityId },
-    });
-
-    if (existing && !existing.profilePicture) {
-      await prisma[entityModel].update({
-        where: { id: entityId },
-        data: { profilePicture: result.secure_url },
-      });
-    }
+    // 4. Asegurar que haya una imagen principal seteada (automaticamente selecciona la mas vieja/primera si no hay)
+    await ensureEntityHasMainImage(entityModel, entityId, dynamicKey);
 
     res.status(200).json(image);
   } catch (err) {
@@ -194,57 +238,8 @@ const deleteImage = async (req, res) => {
     }
 
     if (entityKey && entityId) {
-      let entityModel = entityKey.replace("Id", "");
-      if (entityModel === "category") {
-        entityModel = "categories";
-      }
-
-      // Obtener la entidad actual para saber si profilePicture apunta a la imagen eliminada
-      const currentEntity = await prisma[entityModel].findUnique({
-        where: { id: entityId },
-        select: { profilePicture: true },
-      });
-
-      const wasMain = image.isMain;
-      const isProfilePictureStale = currentEntity?.profilePicture === image.url;
-
-      if (wasMain || isProfilePictureStale) {
-        const remainingImages = await prisma.image.findMany({
-          where: { [entityKey]: entityId },
-          orderBy: { order: "asc" },
-        });
-
-        if (remainingImages.length > 0) {
-          // Promover la primera imagen restante como principal (solo si era main)
-          if (wasMain) {
-            await prisma.image.update({
-              where: { id: remainingImages[0].id },
-              data: { isMain: true, order: 0 },
-            });
-
-            // Reordenar las demás
-            for (let i = 1; i < remainingImages.length; i++) {
-              await prisma.image.update({
-                where: { id: remainingImages[i].id },
-                data: { order: i },
-              });
-            }
-          }
-
-          // Buscar la imagen que sea principal ahora para actualizar profilePicture
-          const newMain = remainingImages.find(img => img.isMain) || remainingImages[0];
-          await prisma[entityModel].update({
-            where: { id: entityId },
-            data: { profilePicture: newMain.url },
-          });
-        } else {
-          // No quedan imágenes, limpiar profilePicture
-          await prisma[entityModel].update({
-            where: { id: entityId },
-            data: { profilePicture: null },
-          });
-        }
-      }
+      const entityModel = reverseTranslate(entityKey.replace("Id", ""));
+      await ensureEntityHasMainImage(entityModel, entityId, entityKey);
     }
 
     res.status(200).json({ message: "Image deleted successfully" });
@@ -254,4 +249,22 @@ const deleteImage = async (req, res) => {
   }
 };
 
-module.exports = { uploadImage, setMainImage, deleteImage };
+const getImagesByEntity = async (req, res) => {
+  try {
+    const { entity, id } = req.params;
+    const translatedEntity = reverseTranslate(entity);
+    const entityKey = `${translatedEntity}Id`;
+
+    const images = await prisma.image.findMany({
+      where: { [entityKey]: id },
+      orderBy: { order: "asc" },
+    });
+
+    res.status(200).json(images);
+  } catch (err) {
+    console.error("Get images error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+module.exports = { uploadImage, setMainImage, deleteImage, getImagesByEntity };

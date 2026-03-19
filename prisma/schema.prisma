@@ -146,6 +146,7 @@ model order {
   cashRegister CashRegister? @relation(fields: [cashRegisterId], references: [id])
   client       client?       @relation(fields: [clientId], references: [id])
   orderDetails orderDetail[]
+  orderPayments OrderPayment[]
 }
 
 model categories {
@@ -310,4 +311,14 @@ model StockHistory {
   store          store             @relation(fields: [storeId], references: [id])
   product        product           @relation(fields: [productId], references: [id])
   user           user?             @relation(fields: [userId], references: [id])
+}
+
+model OrderPayment {
+  id            String   @id @default(cuid())
+  orderId       String
+  paymentMethod String
+  amount        Float
+  createdAt     DateTime @default(now())
+
+  order order @relation(fields: [orderId], references: [id])
 }
