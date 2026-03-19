@@ -48,14 +48,15 @@ const uploadImage = async (req, res) => {
         order: Number(req.body.order ?? 0),
         [dynamicKey]: entityId, // ← súper dinámico
       },)
-    // 3. Guardar imagen en DB
+    // 3. Guardar imagen en DB (incluyendo cloudinaryId para poder eliminar luego)
     const image = await prisma.image.create({
       data: {
         url: result.secure_url,
+        cloudinaryId: result.public_id,
         altText: req.body.altText || "",
         isMain: req.body.isMain === "true" || false,
         order: Number(req.body.order ?? 0),
-        [dynamicKey]: entityId, // ← súper dinámico
+        [dynamicKey]: entityId,
       },
     });
 
@@ -179,44 +180,70 @@ const deleteImage = async (req, res) => {
     // 3. Eliminar la imagen de la DB
     await prisma.image.delete({ where: { id: imageId } });
 
-    // 4. Si era la principal, promover la siguiente
-    if (image.isMain && entityKey && entityId) {
+    // 3.5 Eliminar de Cloudinary si tenemos el public_id
+    if (image.cloudinaryId) {
+      try {
+        await cloudinary.uploader.destroy(image.cloudinaryId);
+        console.log(`[Cloudinary] Imagen eliminada: ${image.cloudinaryId}`);
+      } catch (cloudErr) {
+        // No fatal: el registro ya fue eliminado de la DB
+        console.warn(`[Cloudinary] No se pudo eliminar ${image.cloudinaryId}:`, cloudErr.message);
+      }
+    } else {
+      console.warn(`[Cloudinary] Imagen sin cloudinaryId (legacy), no se eliminó de Cloudinary. URL: ${image.url}`);
+    }
+
+    if (entityKey && entityId) {
       let entityModel = entityKey.replace("Id", "");
       if (entityModel === "category") {
         entityModel = "categories";
       }
 
-      const remainingImages = await prisma.image.findMany({
-        where: { [entityKey]: entityId },
-        orderBy: { order: "asc" },
+      // Obtener la entidad actual para saber si profilePicture apunta a la imagen eliminada
+      const currentEntity = await prisma[entityModel].findUnique({
+        where: { id: entityId },
+        select: { profilePicture: true },
       });
 
-      if (remainingImages.length > 0) {
-        // Promover la primera imagen restante como principal
-        await prisma.image.update({
-          where: { id: remainingImages[0].id },
-          data: { isMain: true, order: 0 },
+      const wasMain = image.isMain;
+      const isProfilePictureStale = currentEntity?.profilePicture === image.url;
+
+      if (wasMain || isProfilePictureStale) {
+        const remainingImages = await prisma.image.findMany({
+          where: { [entityKey]: entityId },
+          orderBy: { order: "asc" },
         });
 
-        // Reordenar las demás
-        for (let i = 1; i < remainingImages.length; i++) {
-          await prisma.image.update({
-            where: { id: remainingImages[i].id },
-            data: { order: i },
+        if (remainingImages.length > 0) {
+          // Promover la primera imagen restante como principal (solo si era main)
+          if (wasMain) {
+            await prisma.image.update({
+              where: { id: remainingImages[0].id },
+              data: { isMain: true, order: 0 },
+            });
+
+            // Reordenar las demás
+            for (let i = 1; i < remainingImages.length; i++) {
+              await prisma.image.update({
+                where: { id: remainingImages[i].id },
+                data: { order: i },
+              });
+            }
+          }
+
+          // Buscar la imagen que sea principal ahora para actualizar profilePicture
+          const newMain = remainingImages.find(img => img.isMain) || remainingImages[0];
+          await prisma[entityModel].update({
+            where: { id: entityId },
+            data: { profilePicture: newMain.url },
+          });
+        } else {
+          // No quedan imágenes, limpiar profilePicture
+          await prisma[entityModel].update({
+            where: { id: entityId },
+            data: { profilePicture: null },
           });
         }
-
-        // Actualizar profilePicture de la entidad
-        await prisma[entityModel].update({
-          where: { id: entityId },
-          data: { profilePicture: remainingImages[0].url },
-        });
-      } else {
-        // No quedan imágenes, limpiar profilePicture
-        await prisma[entityModel].update({
-          where: { id: entityId },
-          data: { profilePicture: null },
-        });
       }
     }
 

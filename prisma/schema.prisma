@@ -234,18 +234,19 @@ model setting {
 }
 
 model Image {
-  id         String   @id @default(cuid())
-  url        String
-  altText    String?
-  isMain     Boolean  @default(false)
-  order      Int?
-  clientId   String?
-  userId     String?
-  supplierId String?
-  categoryId String?
-  productId  String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String   @id @default(cuid())
+  url           String
+  cloudinaryId  String?  // public_id de Cloudinary para poder eliminar el archivo
+  altText       String?
+  isMain        Boolean  @default(false)
+  order         Int?
+  clientId      String?
+  userId        String?
+  supplierId    String?
+  categoryId    String?
+  productId     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   client   client?     @relation(fields: [clientId], references: [id])
   user     user?       @relation(fields: [userId], references: [id])
