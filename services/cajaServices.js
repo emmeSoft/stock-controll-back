@@ -95,13 +95,23 @@ const closeRegister = async (data, user) => {
     
     // 1. Obtener ordenes pagadas durante la caja
     const orders = await prisma.order.findMany({
-        where: { cashRegisterId: openRegister.id, statusPayment: 'paid' }
+        where: { cashRegisterId: openRegister.id, statusPayment: 'paid' },
+        include: { orderPayments: true }
     });
     
     // Solo sumamos el efectivo para el arqueo de caja física
-    const ordersTotalEfectivo = orders
-        .filter(o => !o.paymentMethod || o.paymentMethod.toLowerCase() === 'efectivo')
-        .reduce((sum, order) => sum + order.amoutPayed, 0);
+    const ordersTotalEfectivo = orders.reduce((sum, order) => {
+        // Si hay desglose de pagos, sumamos solo lo que fue en efectivo
+        if (order.orderPayments && order.orderPayments.length > 0) {
+            const cashPart = order.orderPayments
+                .filter(p => p.paymentMethod.toLowerCase() === 'efectivo')
+                .reduce((s, p) => s + p.amount, 0);
+            return sum + cashPart;
+        }
+        // Fallback para órdenes antiguas sin desglose
+        const isEfectivo = !order.paymentMethod || order.paymentMethod.toLowerCase() === 'efectivo';
+        return sum + (isEfectivo ? order.amoutPayed : 0);
+    }, 0);
 
     // 2. Obtener movimientos de caja manuales
     const movements = await prisma.cashMovement.findMany({
@@ -150,7 +160,8 @@ const getRegisterHistory = async (user) => {
             client: true,
             orderDetails: {
                 include: { product: true }
-            }
+            },
+            orderPayments: true
         }
     });
 
@@ -190,7 +201,8 @@ const getGlobalHistory = async (user, query = {}) => {
             client: true,
             orderDetails: {
                 include: { product: true }
-            }
+            },
+            orderPayments: true
         }
     });
 
@@ -223,7 +235,8 @@ const getAllRegisters = async (user, query = {}) => {
             openedByUser: true,
             closedByUser: true,
             orders: {
-                where: { statusPayment: 'paid' }
+                where: { statusPayment: 'paid' },
+                include: { orderPayments: true }
             },
             cashMovements: true
         }
@@ -236,11 +249,23 @@ const getAllRegisters = async (user, query = {}) => {
         let totalTarjeta = 0;
 
         reg.orders.forEach(order => {
-            const method = order.paymentMethod ? order.paymentMethod.toLowerCase() : 'efectivo';
-            if (method === 'efectivo') totalEfectivo += order.amoutPayed;
-            else if (method === 'transferencia') totalTransferencia += order.amoutPayed;
-            else if (method === 'tarjeta') totalTarjeta += order.amoutPayed;
-            else totalEfectivo += order.amoutPayed; // Default to efectivo if unknown
+            // Si la orden tiene desglose de pagos (OrderPayment), sumamos cada uno a su categoría
+            if (order.orderPayments && order.orderPayments.length > 0) {
+                order.orderPayments.forEach(p => {
+                    const method = p.paymentMethod.toLowerCase();
+                    if (method === 'efectivo') totalEfectivo += p.amount;
+                    else if (method === 'transferencia') totalTransferencia += p.amount;
+                    else if (method === 'tarjeta') totalTarjeta += p.amount;
+                    else totalEfectivo += p.amount; // Default a efectivo
+                });
+            } else {
+                // Fallback para órdenes antiguas basadas únicamente en paymentMethod
+                const method = order.paymentMethod ? order.paymentMethod.toLowerCase() : 'efectivo';
+                if (method === 'efectivo') totalEfectivo += order.amoutPayed;
+                else if (method === 'transferencia') totalTransferencia += order.amoutPayed;
+                else if (method === 'tarjeta') totalTarjeta += order.amoutPayed;
+                else totalEfectivo += order.amoutPayed;
+            }
         });
 
         const totalIncome = reg.cashMovements
