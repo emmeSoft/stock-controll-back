@@ -25,4 +25,17 @@ const getAllSales = async (req, res) => {
   }
 };
 
-module.exports = { createSale, getAllSales };
+const getSaleById = async (req, res) => {
+  try {
+    const result = await salesServices.getById(req.params.id, req.user);
+    res.json(result);
+  } catch (error) {
+    if (error.message.includes('no encontrada')) {
+        res.status(404).json({ message: error.message });
+    } else {
+        res.status(500).json({ message: error.message });
+    }
+  }
+};
+
+module.exports = { createSale, getAllSales, getSaleById };

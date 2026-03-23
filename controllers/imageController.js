@@ -4,6 +4,59 @@ const streamifier = require("streamifier");
 const e = require("express");
 const { reverseTranslate } = require("../utils/translator");
 
+/**
+ * Asegura que una entidad tenga exactamente una imagen principal y que
+ * el campo profilePicture esté sincronizado.
+ */
+const ensureEntityHasMainImage = async (entityModel, entityId, entityKey) => {
+  try {
+    const images = await prisma.image.findMany({
+      where: { [entityKey]: entityId },
+      orderBy: [
+        { isMain: "desc" },
+        { order: "asc" },
+        { createdAt: "asc" },
+      ],
+    });
+
+    if (images.length === 0) {
+      await prisma[entityModel].update({
+        where: { id: entityId },
+        data: { profilePicture: null },
+      });
+      return;
+    }
+
+    const newMain = images[0];
+
+    // Promover si no es main
+    if (!newMain.isMain) {
+      await prisma.image.update({
+        where: { id: newMain.id },
+        data: { isMain: true, order: 0 },
+      });
+    }
+
+    // Limpiar otros mains si existieran
+    await prisma.image.updateMany({
+      where: {
+        [entityKey]: entityId,
+        id: { not: newMain.id },
+        isMain: true,
+      },
+      data: { isMain: false },
+    });
+
+    // Sincronizar profilePicture
+    await prisma[entityModel].update({
+      where: { id: entityId },
+      data: { profilePicture: newMain.url },
+    });
+  } catch (err) {
+    console.error(`Error in ensureEntityHasMainImage for ${entityModel}:`, err);
+  }
+};
+
 const uploadImage = async (req, res) => {
   try {
     if (!req.file) {
@@ -48,28 +101,20 @@ const uploadImage = async (req, res) => {
         order: Number(req.body.order ?? 0),
         [dynamicKey]: entityId, // ← súper dinámico
       },)
-    // 3. Guardar imagen en DB
+    // 3. Guardar imagen en DB (incluyendo cloudinaryId para poder eliminar luego)
     const image = await prisma.image.create({
       data: {
         url: result.secure_url,
+        cloudinaryId: result.public_id,
         altText: req.body.altText || "",
         isMain: req.body.isMain === "true" || false,
         order: Number(req.body.order ?? 0),
-        [dynamicKey]: entityId, // ← súper dinámico
+        [dynamicKey]: entityId,
       },
     });
 
-    // 4. Si la entidad no tiene profilePicture, setear la primera automáticamente
-    const existing = await prisma[entityModel].findUnique({
-      where: { id: entityId },
-    });
-
-    if (existing && !existing.profilePicture) {
-      await prisma[entityModel].update({
-        where: { id: entityId },
-        data: { profilePicture: result.secure_url },
-      });
-    }
+    // 4. Asegurar que haya una imagen principal seteada (automaticamente selecciona la mas vieja/primera si no hay)
+    await ensureEntityHasMainImage(entityModel, entityId, dynamicKey);
 
     res.status(200).json(image);
   } catch (err) {
@@ -148,4 +193,78 @@ const setMainImage = async (req, res) => {
   }
 };
 
-module.exports = { uploadImage, setMainImage };
+const deleteImage = async (req, res) => {
+  try {
+    const { imageId } = req.params;
+
+    if (!imageId) {
+      return res.status(400).json({ message: "Image ID is required" });
+    }
+
+    // 1. Buscar la imagen a eliminar
+    const image = await prisma.image.findUnique({ where: { id: imageId } });
+
+    if (!image) {
+      return res.status(404).json({ message: "Image not found" });
+    }
+
+    // 2. Determinar a qué entidad pertenece
+    const entityKeys = ["productId", "userId", "clientId", "supplierId", "categoryId"];
+    let entityKey = null;
+    let entityId = null;
+
+    for (const key of entityKeys) {
+      if (image[key]) {
+        entityKey = key;
+        entityId = image[key];
+        break;
+      }
+    }
+
+    // 3. Eliminar la imagen de la DB
+    await prisma.image.delete({ where: { id: imageId } });
+
+    // 3.5 Eliminar de Cloudinary si tenemos el public_id
+    if (image.cloudinaryId) {
+      try {
+        await cloudinary.uploader.destroy(image.cloudinaryId);
+        console.log(`[Cloudinary] Imagen eliminada: ${image.cloudinaryId}`);
+      } catch (cloudErr) {
+        // No fatal: el registro ya fue eliminado de la DB
+        console.warn(`[Cloudinary] No se pudo eliminar ${image.cloudinaryId}:`, cloudErr.message);
+      }
+    } else {
+      console.warn(`[Cloudinary] Imagen sin cloudinaryId (legacy), no se eliminó de Cloudinary. URL: ${image.url}`);
+    }
+
+    if (entityKey && entityId) {
+      const entityModel = reverseTranslate(entityKey.replace("Id", ""));
+      await ensureEntityHasMainImage(entityModel, entityId, entityKey);
+    }
+
+    res.status(200).json({ message: "Image deleted successfully" });
+  } catch (err) {
+    console.error("Delete image error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+const getImagesByEntity = async (req, res) => {
+  try {
+    const { entity, id } = req.params;
+    const translatedEntity = reverseTranslate(entity);
+    const entityKey = `${translatedEntity}Id`;
+
+    const images = await prisma.image.findMany({
+      where: { [entityKey]: id },
+      orderBy: { order: "asc" },
+    });
+
+    res.status(200).json(images);
+  } catch (err) {
+    console.error("Get images error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+module.exports = { uploadImage, setMainImage, deleteImage, getImagesByEntity };

@@ -4,6 +4,9 @@ const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, i
 
 const create = async (dataClient, user) => {
     console.log('Creating client...',user);
+    if (!user.storeId) {
+        throw new Error('Debe seleccionar una tienda para asignar al cliente.');
+    }
     const response = await prisma.client.create({ data: { ...dataClient, storeId: user.storeId } });
     console.log('Client created:');
     return response;

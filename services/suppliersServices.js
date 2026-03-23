@@ -2,6 +2,9 @@ const prisma = require(`../db/database.prisma`)
 
 const create = async (dataSuppliers, user) => {
     console.log('Creating supplier...');
+    if (!user.storeId) {
+        throw new Error('Debe seleccionar una tienda para asignar al proveedor.');
+    }
     const response = await prisma.supplier.create({ data: { ...dataSuppliers, storeId: user.storeId } });
     console.log('Supplier created:');
     return response;
