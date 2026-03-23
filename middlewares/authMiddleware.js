@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const prisma = require('../db/database.prisma');
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -12,6 +13,17 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Verificar en la DB si el usuario sigue activo
+    const dbUser = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: { isActive: true }
+    });
+
+    if (!dbUser || dbUser.isActive === false) {
+      return res.status(403).json({ message: 'Tu cuenta ha sido desactivada' });
+    }
+
     req.user = decoded; // { id, email, role, storeId, ... }
     
     // Si no es un SUPERADMIN y no tiene storeId asignado, no puede hacer nada
