@@ -2,14 +2,17 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../db/database.prisma');
 
 const authMiddleware = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
+  // Intentar leer de cookies primero, luego de header como fallback
+  let token = req.cookies?.token;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.log("no hay header o no empieza con Bearer")
-    return res.status(401).json({ message: 'No se proporcionó token de validación' });
+  if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    console.log("No token found in cookies or headers");
+    return res.status(401).json({ message: 'No se proporcionó token de validación' });
+  }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -24,7 +27,8 @@ const authMiddleware = async (req, res, next) => {
       return res.status(403).json({ message: 'Tu cuenta ha sido desactivada' });
     }
 
-    req.user = decoded; // { id, email, role, storeId, ... }
+     req.user = decoded; // { id, email, role, storeId, ... }
+     req.user.req = req; // Inyectamos req para que los servicios vean cookies si necesitan
     
     // Si no es un SUPERADMIN y no tiene storeId asignado, no puede hacer nada
     if (decoded.role !== 'SUPERADMIN' && !decoded.storeId) {

@@ -3,7 +3,10 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 const app = express();
+
+app.use(cookieParser());
 
 // Middlewares de Seguridad
 app.use(helmet()); // Protección de cabeceras HTTP
@@ -19,9 +22,9 @@ const limiter = rateLimit({
 
 // Limitador específico para Login (más estricto)
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 1 * 60 * 1000,
   max: 10, // Solo 10 intentos de login en 15 minutos
-  message: { message: 'Demasiado intentos de login, intenta de nuevo en 15 minutos.' }
+  message: { message: 'Demasiado intentos de login, intenta de nuevo en 1 minutos.' }
 });
 
 const authRoutes = require('./routes/authRoutes');
@@ -52,7 +55,7 @@ app.use("/api/user", employeesRoutes);
 app.use("/api/suppliers", suppliersRoutes);
 app.use("/api/categories", categoriesRoutes); // creo que las categorias deberian tener un codigo unico de indentificacion que tambien deberia traerse desde la base de datos y mostrado al usuario (distinto al id de la categoria)
 app.use("/api/products", productsRoutes); // mismo comentario para los productos.
-app.use("/api/images", imageRoutes); 
+app.use("/api/images", imageRoutes);
 app.use("/api/sales", salesRoutes);
 app.use("/api/stores", storesRoutes);
 app.use("/api/caja", cajaRoutes);

@@ -3,29 +3,33 @@ const bcrypt = require('bcrypt');
 const ALLOWED_ROLES = ["SUPERADMIN", "ADMIN", "USUARIO"];
 const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
-const verifyAdminPassword = async (adminId, adminPassword) => {
-    if (!adminPassword) throw new Error("La contraseña del administrador es requerida.");
-    const adminRecord = await prisma.user.findUnique({ where: { id: adminId } });
-    if (!adminRecord) throw new Error("Administrador no encontrado");
-
-    const isAdminPasswordValid = await bcrypt.compare(adminPassword, adminRecord.password);
-    if (!isAdminPasswordValid) throw new Error("Contraseña de administrador incorrecta. Autorización denegada.");
+const verifySudoMode = (req) => {
+    if (!req.cookies || req.cookies.sudo !== 'true') {
+        throw new Error("Acción bloqueada. Se requiere validación reciente de contraseña (Sudo Mode).");
+    }
     return true;
 };
 
 const create = async (dataEmployee, user) => {
     console.log('Creando Empleado...');
+
+    // 0. Verificar si el email ya existe para evitar error de constraint
+    const existingEmail = await prisma.user.findUnique({ where: { email: dataEmployee.email } });
+    if (existingEmail) {
+        throw new Error(`El email "${dataEmployee.email}" ya está registrado en el sistema.`);
+    }
     
     // Un ADMIN no puede crear un SUPERADMIN
     if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
         throw new Error('No tienes permisos para crear un usuario de nivel SUPERADMIN.');
     }
 
-    // Si se crea un ADMIN o SUPERADMIN, verificar contraseña del creador
+    // Si se crea un ADMIN o SUPERADMIN, verificar Sudo Mode
     if (dataEmployee.role === 'ADMIN' || dataEmployee.role === 'SUPERADMIN') {
-        await verifyAdminPassword(user.id, dataEmployee.adminPassword);
+        verifySudoMode(user.req); // Pasamos req para chequear cookies
     }
-    // Ya validada, quitamos el adminPassword para que no interfiera
+    
+    // Ya validada la autoridad, quitamos el adminPassword del body si venía
     delete dataEmployee.adminPassword;
 
     // El empleado se asigna a la tienda del creador (a menos que el creador sea un SUPERADMIN y haya especificado storeId explicitamente)
@@ -50,13 +54,12 @@ const create = async (dataEmployee, user) => {
         data: { 
             ...dataEmployee, 
             password: hashedPassword, 
-            tempPassword: tempPin,
             mustChangePassword: true,
             storeId: assignedStoreId 
         } 
     });
-    console.log(`Empleado creado con PIN temporal: ${tempPin}`);
-    return { ...response, generatedPin: tempPin }; // Retornamos el PIN para que el frontend lo vea
+    
+    return { ...response, generatedPin: tempPin }; // Regla Negocio: Retorna solo en tiempo de req
 }
 
 const getAll = async (user) => {
@@ -157,6 +160,17 @@ const update = async (id, dataEmployee, user) => {
             throw new Error("Email inválido");
         }
 
+        // Verificar si el nuevo email ya lo tiene otro usuario
+        const emailConflict = await prisma.user.findFirst({
+            where: {
+                email: normalized,
+                NOT: { id: id }
+            }
+        });
+        if (emailConflict) {
+            throw new Error(`El email "${normalized}" ya está siendo utilizado por otro empleado.`);
+        }
+
         cleanData.email = normalized;
     }
 
@@ -187,11 +201,11 @@ const update = async (id, dataEmployee, user) => {
     return response;
 }
 
-const setActiveStatus = async (id, isActive, adminPassword, user) => {
+const setActiveStatus = async (id, isActive, user) => {
     console.log(`${isActive ? "Habilitando" : "Deshabilitando"} empleado con ID: ${id}`);
     
-    // 1. Verificar la contraseña del administrador obligatoriamente
-    await verifyAdminPassword(user.id, adminPassword);
+    // 1. Verificar Sudo Mode en lugar de contraseña en el body
+    verifySudoMode(user.req);
     
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const existing = await prisma.user.findFirst({ where: whereClause });
@@ -206,9 +220,9 @@ const setActiveStatus = async (id, isActive, adminPassword, user) => {
 
     return response;
 }
-const resetPassword = async (employeeId, adminPassword, adminUser) => {
-    // 1. Verificar la contraseña del administrador
-    await verifyAdminPassword(adminUser.id, adminPassword);
+const resetPassword = async (employeeId, adminUser) => {
+    // 1. Verificar Sudo Mode
+    verifySudoMode(adminUser.req);
 
     // 2. Buscar al empleado a blanquear
     const whereClause = adminUser.storeId ? { id: employeeId, storeId: adminUser.storeId } : { id: employeeId };
@@ -228,12 +242,10 @@ const resetPassword = async (employeeId, adminPassword, adminUser) => {
         where: { id: employeeId },
         data: {
             password: hashedPassword,
-            tempPassword: newTempPin,
             mustChangePassword: true
         }
     });
 
-    console.log(`Clave blanqueada para ${updatedEmployee.email}. Nuevo PIN: ${newTempPin}`);
     return { 
         message: "Clave blanqueada exitosamente.", 
         newPin: newTempPin,

@@ -63,8 +63,7 @@ const changeInitialPassword = async (email, newPassword) => {
     where: { email },
     data: {
       password: hashedPassword,
-      mustChangePassword: false,
-      tempPassword: null // Borramos el PIN por seguridad
+      mustChangePassword: false
     }
   });
 
