@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -157,7 +157,7 @@ model categories {
   profilePicture String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  barcodePrefix  String?  @db.VarChar(3)
+  barcodePrefix  String?
   isActive       Boolean  @default(true)
 
   store    store     @relation(fields: [storeId], references: [id])
@@ -178,7 +178,7 @@ model product {
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  barcode        String?  @db.VarChar(9)
+  barcode        String?
   categoryId     String?
 
   store        store         @relation(fields: [storeId], references: [id])
@@ -265,7 +265,7 @@ model CashRegister {
   closingAmount  Float?
   expectedAmount Float?
   difference     Float?
-  observation    String?            @db.Text
+  observation    String?
   status         CashRegisterStatus @default(OPEN)
   openedAt       DateTime           @default(now())
   closedAt       DateTime?
@@ -305,7 +305,7 @@ model StockHistory {
   previousStock  Int
   movementAmount Int
   currentStock   Int
-  description    String?           @db.Text
+  description    String?
   createdAt      DateTime          @default(now())
 
   store          store             @relation(fields: [storeId], references: [id])

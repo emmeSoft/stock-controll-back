@@ -22,5 +22,29 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment files
 .env
-/generated/prisma
+.env.local
+.env.*.local
+
+# Prisma
+/generated/
+prisma/*.json
+!prisma/schema.prisma
+
+# Seed and data files (NO subir a git)
+prisma/seed.js
+prisma/superadmin.json
+prisma/*.json
+data/
+*.seed.json
+
+# OS
+Thumbs.db
+
+# Testing
+coverage/
+
+# Build artifacts
+*.tgz

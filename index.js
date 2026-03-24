@@ -1,7 +1,28 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const app = express();
+
+// Middlewares de Seguridad
+app.use(helmet()); // Protección de cabeceras HTTP
+
+// Limitador de peticiones global
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // Límite de 100 peticiones por ventana
+  message: { message: 'Demasiadas peticiones desde esta IP, por favor intenta de nuevo más tarde.' },
+  standardHeaders: true, // Retorna info del límite en las cabeceras `RateLimit-*`
+  legacyHeaders: false, // Desactiva las cabeceras `X-RateLimit-*`
+});
+
+// Limitador específico para Login (más estricto)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // Solo 10 intentos de login en 15 minutos
+  message: { message: 'Demasiado intentos de login, intenta de nuevo en 15 minutos.' }
+});
 
 const authRoutes = require('./routes/authRoutes');
 const clientRoutes = require('./routes/clientsRoutes');
@@ -23,7 +44,8 @@ app.use(cors({
 }));
 
 app.use(express.json());
-app.use('/api/auth', authRoutes);
+app.use(limiter); // Aplicar el limitador global
+app.use('/api/auth', loginLimiter, authRoutes); // Aplicar limitador estricto a login
 
 app.use("/api/clients", clientRoutes);
 app.use("/api/user", employeesRoutes);
