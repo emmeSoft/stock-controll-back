@@ -1,6 +1,7 @@
 const prisma = require(`../db/database.prisma`);
 const bcrypt = require('bcrypt');
-const ALLOWED_ROLES = ["SUPERADMIN", "ADMIN", "USUARIO"];
+// Roles nuevos: SISTEMA, ADMINISTRADOR, ENCARGADO, VENDEDOR
+const ALLOWED_ROLES = ["SISTEMA", "ADMINISTRADOR", "ENCARGADO", "VENDEDOR"];
 const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
 const verifySudoMode = (req) => {
@@ -19,27 +20,29 @@ const create = async (dataEmployee, user) => {
         throw new Error(`El email "${dataEmployee.email}" ya está registrado en el sistema.`);
     }
     
-    // Un ADMIN no puede crear un SUPERADMIN
-    if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
-        throw new Error('No tienes permisos para crear un usuario de nivel SUPERADMIN.');
+    // Un ADMINISTRADOR no puede crear un SISTEMA
+    if (user.role === 'ADMINISTRADOR' && dataEmployee.role === 'SISTEMA') {
+        throw new Error('No tienes permisos para crear un usuario de nivel SISTEMA.');
     }
 
-    // Si se crea un ADMIN o SUPERADMIN, verificar Sudo Mode
-    if (dataEmployee.role === 'ADMIN' || dataEmployee.role === 'SUPERADMIN') {
+    // Si se crea un ADMINISTRADOR o SISTEMA, verificar Sudo Mode
+    if (dataEmployee.role === 'ADMINISTRADOR' || dataEmployee.role === 'SISTEMA') {
         verifySudoMode(user.req); // Pasamos req para chequear cookies
     }
     
     // Ya validada la autoridad, quitamos el adminPassword del body si venía
     delete dataEmployee.adminPassword;
 
-    // El empleado se asigna a la tienda del creador (a menos que el creador sea un SUPERADMIN y haya especificado storeId explicitamente)
-    // El middleware authMiddleware inyecta el x-store-id en user.storeId temporalmente si es "SUPERADMIN"
+    // El empleado se asigna a la tienda del creador (a menos que el creador sea SISTEMA y haya especificado storeId explicitamente)
+    // El middleware authMiddleware inyecta el x-store-id en user.storeId temporalmente si es "SISTEMA"
     let assignedStoreId = user.storeId;
-    if (user.role === 'SUPERADMIN' && dataEmployee.storeId) {
+    if (user.role === 'SISTEMA' && dataEmployee.storeId) {
         assignedStoreId = dataEmployee.storeId;
     }
 
-    if (!assignedStoreId) {
+    // SISTEMA puede no tener tienda asignada (es global)
+    // Pero si está creando un usuario que no sea SISTEMA, necesita tienda
+    if (!assignedStoreId && dataEmployee.role !== 'SISTEMA') {
        throw new Error('Debe seleccionar una tienda para asignar al empleado.');
     }
 
@@ -63,16 +66,25 @@ const create = async (dataEmployee, user) => {
 }
 
 const getAll = async (user) => {
-    console.log('Trayendo todos los empleados...');
-    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+    console.log('Trayendo todos los empleados...', user);
+    // SISTEMA puede ver todos los usuarios de todas las tiendas
+    // Si hay override de tienda (isGlobalOverride), filtrar por esa tienda
+    const isSistema = user.role === 'SISTEMA' || user.isSistema;
+    const canSeeAll = isSistema && !user.isGlobalOverride;
+    
+    console.log('isSistema:', isSistema, 'isGlobalOverride:', user.isGlobalOverride, 'canSeeAll:', canSeeAll);
+    
+    const whereClause = canSeeAll ? {} : { storeId: user.storeId };
     const response = await prisma.user.findMany({ where: whereClause });
-    console.log('Empleados Cargados:');
+    console.log('Empleados Cargados:', response.length);
     return response;
 }
 
 const getById = async (id, user) => {
     console.log(`Trayendo empleado con ID: ${id}`);
-    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    // SISTEMA puede ver cualquier usuario
+    const isSistema = user.role === 'SISTEMA' || user.isSistema;
+    const whereClause = isSistema ? { id: id } : { id: id, storeId: user.storeId };
     const response = await prisma.user.findFirst({
         where: whereClause,
         include: {
@@ -97,9 +109,9 @@ const update = async (id, dataEmployee, user) => {
     const existing = await prisma.user.findFirst({ where: whereClause });
     if (!existing) throw new Error("Empleado no encontrado o denegado");
     
-    // Un ADMIN no puede promoverse o promover a alguien a SUPERADMIN
-    if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
-        throw new Error('No tienes permisos para otorgar nivel SUPERADMIN.');
+    // Un ADMINISTRADOR no puede promoverse o promover a alguien a SISTEMA
+    if (user.role === 'ADMINISTRADOR' && dataEmployee.role === 'SISTEMA') {
+        throw new Error('No tienes permisos para otorgar nivel SISTEMA.');
     }
 
     if (dataEmployee.role && dataEmployee.role !== existing.role) {
@@ -225,13 +237,14 @@ const resetPassword = async (employeeId, adminUser) => {
     verifySudoMode(adminUser.req);
 
     // 2. Buscar al empleado a blanquear
-    const whereClause = adminUser.storeId ? { id: employeeId, storeId: adminUser.storeId } : { id: employeeId };
+    const isAdminSistema = adminUser.role === 'SISTEMA' || adminUser.isSistema;
+    const whereClause = isAdminSistema ? { id: employeeId } : { id: employeeId, storeId: adminUser.storeId };
     const employeeRecord = await prisma.user.findFirst({ where: whereClause });
     if (!employeeRecord) throw new Error("Empleado no encontrado o no pertenece a tu tienda.");
 
-    // No se puede blanquear un superadmin por este medio
-    if (employeeRecord.role === 'SUPERADMIN' && adminUser.role !== 'SUPERADMIN') {
-        throw new Error("No tienes permisos para blanquear la clave de un SUPERADMIN.");
+    // No se puede blanquear un SISTEMA por este medio (solo el propio SISTEMA puede)
+    if (employeeRecord.role === 'SISTEMA' && !isAdminSistema) {
+        throw new Error("No tienes permisos para blanquear la clave de un usuario SISTEMA.");
     }
 
     // 3. Generar nuevo PIN y actualizar

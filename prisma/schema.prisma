@@ -39,7 +39,9 @@ model user {
   address             String
   city                String
   profilePicture      String?
-  role                String         @default("USUARIO")
+  // RBAC: relación a tabla Role
+  roleId              String
+  rbacRole            Role           @relation(fields: [roleId], references: [id])
   isActive            Boolean        @default(true)
   mustChangePassword  Boolean        @default(true)
   createdAt           DateTime       @default(now())
@@ -52,6 +54,9 @@ model user {
   orders              order[]
   payments            payment[]
   store               store?         @relation(fields: [storeId], references: [id])
+
+  @@index([storeId])
+  @@index([roleId])
 }
 
 model client {
@@ -302,8 +307,61 @@ enum StockMovementType {
   INITIAL
 }
 
-enum Role {
-  SUPERADMIN
-  ADMIN
-  USUARIO
+// ============================================
+// RBAC - Role-Based Access Control
+// ============================================
+
+enum RoleType {
+  SISTEMA
+  ADMINISTRADOR
+  ENCARGADO
+  VENDEDOR
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        RoleType         @unique
+  description String?
+  isSystem    Boolean          @default(false)
+  permissions PermissionRole[]
+  users       user[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model Permission {
+  id           String           @id @default(cuid())
+  name         String           @unique // ej: "sale.create", "caja.open"
+  description  String?
+  category     String           // ej: "USUARIOS", "VENTAS", "CAJA"
+  roles        PermissionRole[]
+  createdAt    DateTime         @default(now())
+}
+
+model PermissionRole {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+}
+
+// ============================================
+// Auditoría de RBAC
+// ============================================
+
+model RoleAudit {
+  id            String   @id @default(cuid())
+  userId        String   // Usuario cuyo rol fue cambiado
+  previousRoleId String? // Rol anterior (null si es nuevo)
+  newRoleId     String   // Nuevo rol asignado
+  changedBy     String   // Usuario que realizó el cambio
+  reason        String?  // Razón del cambio
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([changedBy])
 }

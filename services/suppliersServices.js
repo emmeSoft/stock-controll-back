@@ -13,7 +13,10 @@ const create = async (dataSuppliers, user) => {
 const getAll = async (user) => {
     try {
         console.log('Fetching all suppliers...');
-        const whereClause = user.storeId ? { storeId: user.storeId } : {};
+        // SISTEMA puede ver todos los proveedores si no hay override de tienda
+        const isSistema = user.role === 'SISTEMA' || user.isSistema;
+        const canSeeAll = isSistema && !user.isGlobalOverride;
+        const whereClause = canSeeAll ? {} : { storeId: user.storeId };
         const response = await prisma.supplier.findMany({ where: whereClause });
         console.log('Suppliers fetched:');
         return response;

@@ -6,7 +6,10 @@ const prisma = require(`../db/database.prisma`)
 
 
 const loginUser = async (email, password) => {
-   const user = await prisma['user'].findUnique({ where: { email } });
+   const user = await prisma['user'].findUnique({ 
+     where: { email },
+     include: { rbacRole: true, store: true }
+   });
 
   if (!user) {
     throw new Error('Credenciales incorrectas desde el backend');
@@ -33,8 +36,11 @@ const loginUser = async (email, password) => {
     };
   }
 
+  // Obtener nombre del rol RBAC
+  const roleName = user.rbacRole?.name || 'VENDEDOR';
+
   const token = jwt.sign(
-    { id: user.id, email: user.email, role: user.role, storeId: user.storeId },
+    { id: user.id, email: user.email, role: roleName, storeId: user.storeId },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -46,8 +52,9 @@ const loginUser = async (email, password) => {
       id: user.id,
       firstName: user.firstName,
       email: user.email,
-      role: user.role,
+      role: roleName,
       storeId: user.storeId,
+      storeName: user.store?.name,
       profilePicture: user.profilePicture
     }
   };

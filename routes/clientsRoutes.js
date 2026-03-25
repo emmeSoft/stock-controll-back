@@ -3,12 +3,13 @@ const clientController = require('../controllers/clientController');
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middlewares/authMiddleware');
+const { requirePermission } = require('../middlewares/rbacMiddleware');
 
-router.post('/', authMiddleware, clientController.createClient);
-router.get('/', authMiddleware, clientController.getAllClients);
-router.get('/:id', authMiddleware, clientController.getClientDetails);
-router.put('/:id', authMiddleware, clientController.updateClient);
-router.put('/:id/active', authMiddleware, clientController.toggleActiveStatus);
+router.post('/', authMiddleware, requirePermission('client.create'), clientController.createClient);
+router.get('/', authMiddleware, requirePermission('client.read'), clientController.getAllClients);
+router.get('/:id', authMiddleware, requirePermission('client.read'), clientController.getClientDetails);
+router.put('/:id', authMiddleware, requirePermission('client.update'), clientController.updateClient);
+router.put('/:id/active', authMiddleware, requirePermission('client.update'), clientController.toggleActiveStatus);
 
 
 module.exports = router;

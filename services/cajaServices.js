@@ -223,8 +223,12 @@ const getAllRegisters = async (user, query = {}) => {
     const { startDate, endDate } = query;
     const range = buildDateRange(startDate, endDate);
 
+    // SISTEMA puede ver todos los registros si no hay override de tienda
+    const isSistema = user.role === 'SISTEMA' || user.isSistema;
+    const canSeeAll = isSistema && !user.isGlobalOverride;
+
     const whereClause = {
-        ...(user.storeId ? { storeId: user.storeId } : {}),
+        ...(canSeeAll ? {} : (user.storeId ? { storeId: user.storeId } : {})),
         openedAt: { gte: range.start, lte: range.end },
     };
 
