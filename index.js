@@ -14,7 +14,7 @@ app.use(helmet()); // Protección de cabeceras HTTP
 // Limitador de peticiones global
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // Límite de 100 peticiones por ventana
+  max: 1000, // Límite de 100 peticiones por ventana
   message: { message: 'Demasiadas peticiones desde esta IP, por favor intenta de nuevo más tarde.' },
   standardHeaders: true, // Retorna info del límite en las cabeceras `RateLimit-*`
   legacyHeaders: false, // Desactiva las cabeceras `X-RateLimit-*`
