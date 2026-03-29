@@ -78,14 +78,6 @@ const logout = async (req, res) => {
     res.json({ message: 'Sesión cerrada correctamente' });
 };
 
-const resetPassword = async (req, res) => {
-  const { email, newPassword } = req.body;
-  try {
-    const result = await authServices.changeInitialPassword(email, newPassword);
-    res.json(result);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-};
 
-module.exports = { login, resetPassword, checkAuth, verifySudo, logout };
+
+module.exports = { login, checkAuth, verifySudo, logout };
