@@ -34,6 +34,9 @@ prisma/*.json
 !prisma/schema.prisma
 
 # Seed and data files (NO subir a git)
+superadmin.json
+temp_check.js
+upsertSuperadmin.js
 prisma/seed.js
 prisma/superadmin.json
 prisma/*.json
