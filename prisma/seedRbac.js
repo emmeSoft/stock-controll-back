@@ -52,11 +52,21 @@ const PERMISSIONS = [
   { name: 'client.update', category: 'CLIENTES', description: 'Editar clientes' },
   { name: 'client.delete', category: 'CLIENTES', description: 'Eliminar clientes' },
 
+  // PROVEEDORES
+  { name: 'supplier.create', category: 'PROVEEDORES', description: 'Crear proveedores' },
+  { name: 'supplier.read', category: 'PROVEEDORES', description: 'Ver proveedores' },
+  { name: 'supplier.update', category: 'PROVEEDORES', description: 'Editar proveedores' },
+
+  // MOVIMIENTOS
+  { name: 'movimiento.create', category: 'CAJA', description: 'Crear movimientos de caja' },
+  { name: 'movimiento.read', category: 'CAJA', description: 'Ver movimientos de caja' },
+
   // REPORTES
   { name: 'report.sales', category: 'REPORTES', description: 'Reporte de ventas' },
   { name: 'report.inventory', category: 'REPORTES', description: 'Reporte de inventario' },
   { name: 'report.financial', category: 'REPORTES', description: 'Reporte financiero' },
   { name: 'report.audit', category: 'REPORTES', description: 'Reporte de auditoría' },
+  { name: 'seller.performance.read', category: 'REPORTES', description: 'Ver rendimiento de vendedores' },
 
   // CAJA
   { name: 'caja.open', category: 'CAJA', description: 'Abrir caja' },
@@ -95,7 +105,9 @@ const ROLE_PERMISSIONS = {
     'inventory.read', 'inventory.adjust', 'inventory.transfer', 'inventory.low-stock-alert',
     'sale.create', 'sale.read', 'sale.cancel', 'sale.refund', 'sale.discount',
     'client.create', 'client.read', 'client.update', 'client.delete',
-    'report.sales', 'report.inventory', 'report.financial', 'report.audit',
+    'supplier.create', 'supplier.read', 'supplier.update',
+    'movimiento.create', 'movimiento.read',
+    'report.sales', 'report.inventory', 'report.financial', 'report.audit', 'seller.performance.read',
     'caja.open', 'caja.close', 'caja.read', 'caja.reconcile',
     'config.read', 'config.update',
     'audit.read', 'audit.export',
@@ -109,6 +121,8 @@ const ROLE_PERMISSIONS = {
     'inventory.read', 'inventory.adjust', 'inventory.transfer', 'inventory.low-stock-alert',
     'sale.create', 'sale.read', 'sale.cancel', 'sale.refund', 'sale.discount',
     'client.create', 'client.read', 'client.update',
+    'supplier.create', 'supplier.read', 'supplier.update',
+    'movimiento.create', 'movimiento.read',
     'report.sales', 'report.inventory',
     'caja.open', 'caja.close', 'caja.read',
     'config.read',
@@ -120,6 +134,8 @@ const ROLE_PERMISSIONS = {
     'inventory.read', 'inventory.low-stock-alert',
     'sale.create', 'sale.read',
     'client.create', 'client.read',
+    'supplier.read',
+    'movimiento.create', 'movimiento.read',
     'report.sales',
     'caja.open', 'caja.close', 'caja.read',
   ],
