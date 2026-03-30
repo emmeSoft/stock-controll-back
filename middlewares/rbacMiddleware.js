@@ -19,13 +19,6 @@ const requirePermission = (permission) => {
       const userId = req.user?.id;
       const storeId = req.headers['x-store-id'] || req.user?.storeId;
       
-      console.log('[RBAC-Middleware] Incoming request:', req.method, req.originalUrl);
-      console.log('[RBAC-Middleware] userId:', userId);
-      console.log('[RBAC-Middleware] storeId from header:', req.headers['x-store-id']);
-      console.log('[RBAC-Middleware] storeId from user:', req.user?.storeId);
-      console.log('[RBAC-Middleware] final storeId:', storeId);
-      console.log('[RBAC-Middleware] user.role:', req.user?.role);
-      console.log('[RBAC-Middleware] user.isSistema:', req.user?.isSistema);
 
       // Verificar que el usuario está autenticado
       if (!userId) {

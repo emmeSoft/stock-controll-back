@@ -9,7 +9,18 @@ const app = express();
 app.use(cookieParser());
 
 // Middlewares de Seguridad
-app.use(helmet()); // Protección de cabeceras HTTP
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // unsafe-inline es a veces necesario en dev
+      styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
+      fontSrc: ["'self'", "fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]
+    }
+  }
+})); // Protección de cabeceras HTTP y CSP
 
 // Limitador de peticiones global
 const limiter = rateLimit({
@@ -20,11 +31,22 @@ const limiter = rateLimit({
   legacyHeaders: false, // Desactiva las cabeceras `X-RateLimit-*`
 });
 
-// Limitador específico para Login (más estricto)
+// Limitador específico para Login (estricto)
 const loginLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000,
-  max: 10, // Solo 10 intentos de login en 15 minutos
-  message: { message: 'Demasiado intentos de login, intenta de nuevo en 1 minutos.' }
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 15, // 15 intentos por ventana
+  message: { message: 'Demasiado intentos de login, intenta de nuevo en 15 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Limitador para Sudo y operaciones críticas (Extra estricto)
+const sudoLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 5, // Solo 5 intentos
+  message: { message: 'Límite de validaciones críticas excedido, intenta en 5 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 const authRoutes = require('./routes/authRoutes');
@@ -48,7 +70,9 @@ app.use(cors({
 
 app.use(express.json());
 app.use(limiter); // Aplicar el limitador global
-app.use('/api/auth', loginLimiter, authRoutes); // Aplicar limitador estricto a login
+
+// Rutas de autenticación con sus propios limitadores definidos en el router o aquí
+app.use('/api/auth', authRoutes); 
 
 app.use("/api/clients", clientRoutes);
 app.use("/api/user", employeesRoutes);
@@ -62,6 +86,7 @@ app.use("/api/caja", cajaRoutes);
 app.use("/api/movimientos", movimientosRoutes);
 app.use("/api/stock-history", stockHistoryRoutes);
 app.use("/api/seller-performance", sellerPerformanceRoutes);
-app.listen(3000, () => {
-  console.log('Servidor corriendo en http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });

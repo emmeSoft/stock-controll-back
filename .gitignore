@@ -38,10 +38,13 @@ superadmin.json
 temp_check.js
 upsertSuperadmin.js
 prisma/seed.js
+prisma/seedRbac.js
+prisma/create_maxi.js
 prisma/superadmin.json
 prisma/*.json
 data/
 *.seed.json
+conflicts.txt
 
 # OS
 Thumbs.db

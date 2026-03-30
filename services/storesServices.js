@@ -1,22 +1,35 @@
 const prisma = require(`../db/database.prisma`)
 
 const create = async (dataStore, user) => {
-    console.log('Creating store...', user);
-    console.log('User role:', user.role);
-    console.log('User isSistema:', user.isSistema);
+    // console.log('Creating store...', user);
+    // console.log('User role:', user.role);
+    // console.log('User isSistema:', user.isSistema);
     // SISTEMA puede crear tiendas
     const isSistema = user.role === 'SISTEMA' || user.isSistema;
-    console.log('Is Sistema:', isSistema);
+    // console.log('Is Sistema:', isSistema);
     if (!isSistema) {
         throw new Error('Solo el usuario SISTEMA puede crear tiendas.');
     }
-    const response = await prisma.store.create({ data: dataStore });
-    console.log('Store created:', response.id);
+    const allowedFields = [
+        "name", 
+        "address", 
+        "phone", 
+        "profilePicture", 
+        "isActive"
+    ];
+
+    const cleanData = Object.fromEntries(
+        Object.entries(dataStore).filter(
+            ([key, value]) => allowedFields.includes(key) && value !== undefined
+        )
+    );
+
+    const response = await prisma.store.create({ data: cleanData });
     return response;
 }
 
 const getAll = async (user) => {
-    console.log('Fetching stores...');
+    // console.log('Fetching stores...');
     // SISTEMA puede ver todas las tiendas (soporta role o isSistema)
     const isSistema = user.role === 'SISTEMA' || user.isSistema;
     if (isSistema) {
@@ -30,7 +43,6 @@ const getAll = async (user) => {
 }
 
 const getById = async (id, user) => {
-    console.log(`Fetching store with ID: ${id}`);
     
     // SISTEMA puede ver cualquier tienda
     // Otros roles solo pueden ver su propia tienda
@@ -50,7 +62,6 @@ const getById = async (id, user) => {
 }
 
 const update = async (id, dataStore, user) => {
-    console.log(`Updating store with ID: ${id}`);
     
     // SISTEMA puede actualizar cualquier tienda
     // ADMINISTRADOR puede actualizar solo su tienda
@@ -60,15 +71,28 @@ const update = async (id, dataStore, user) => {
         throw new Error("Acceso denegado. Solo SISTEMA o el ADMINISTRADOR de la tienda pueden editar.");
     }
 
+    const allowedFields = [
+        "name", 
+        "address", 
+        "phone", 
+        "profilePicture", 
+        "isActive"
+    ];
+
+    const cleanData = Object.fromEntries(
+        Object.entries(dataStore).filter(
+            ([key, value]) => allowedFields.includes(key) && value !== undefined
+        )
+    );
+
     const response = await prisma.store.update({
         where: { id: id },
-        data: dataStore
+        data: cleanData
     });
     return response;
 }
 
 const setActiveStatus = async (id, isActive, user) => {
-    console.log(`${isActive ? "Enabling" : "Disabling"} store with ID: ${id}`);
     
     // Solo SISTEMA puede habilitar/deshabilitar una tienda
     if (user.role !== 'SISTEMA') {

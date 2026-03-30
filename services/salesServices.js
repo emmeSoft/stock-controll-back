@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require(`../db/database.prisma.js`)
 const cajaServices = require('./cajaServices');
 
 const create = async (saleData, user) => {

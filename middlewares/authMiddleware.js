@@ -10,7 +10,7 @@ const authMiddleware = async (req, res, next) => {
   }
 
   if (!token) {
-    console.log("No token found in cookies or headers");
+    // No token: responder 401 silenciosamente
     return res.status(401).json({ message: 'No se proporcionó token de validación' });
   }
 
@@ -47,19 +47,19 @@ const authMiddleware = async (req, res, next) => {
     // Y el usuario es SISTEMA, "falsificamos" temporalmente su req.user.storeId
     // para que todos los controladores actúen como si fuera un Admin Local de esa tienda.
     const activeStoreHeader = req.headers['x-store-id'];
-    console.log('[Auth] x-store-id header:', activeStoreHeader);
-    console.log('[Auth] rbacRoleName:', rbacRoleName);
+    // console.log('[Auth] x-store-id header:', activeStoreHeader);
+    // console.log('[Auth] rbacRoleName:', rbacRoleName);
     
     if (rbacRoleName === 'SISTEMA' && activeStoreHeader && activeStoreHeader !== "ALL") {
        req.user.storeId = activeStoreHeader;
        req.user.isGlobalOverride = true; // Flag para que los servicios sepán que es override
-       console.log('[Auth] SISTEMA con override, storeId:', activeStoreHeader);
+       // console.log('[Auth] SISTEMA con override, storeId:', activeStoreHeader);
     }
 
     // SISTEMA siempre tiene acceso global sin restricciones
     if (rbacRoleName === 'SISTEMA') {
        req.user.isSistema = true;
-       console.log('[Auth] SISTEMA flag set');
+       // console.log('[Auth] SISTEMA flag set');
     }
 
     next();

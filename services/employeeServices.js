@@ -42,8 +42,11 @@ const resolveRole = async (roleName) => {
 const mapUserResponse = (userRecord) => {
     if (!userRecord) return userRecord;
 
+    const { password, ...userWithoutPassword } = userRecord;
+
     return {
-        ...userRecord,
+        ...userWithoutPassword,
+        password: "HIDDEN", // Placeholder para que el frontend renderice el botón de blanqueo sin exponer el hash
         role: getRoleName(userRecord.rbacRole) || userRecord.role || null
     };
 };
@@ -128,7 +131,6 @@ const ensureAdminPinAuthority = (user) => {
 const generateTemporaryPin = () => crypto.randomInt(1000, 10000).toString();
 
 const create = async (dataEmployee, user) => {
-    console.log('Creando Empleado...');
     ensureAdminPinAuthority(user);
 
     const requestedRoleName = assertAllowedRole(dataEmployee.role);
@@ -189,25 +191,21 @@ const create = async (dataEmployee, user) => {
 }
 
 const getAll = async (user) => {
-    console.log('Trayendo todos los empleados...', user);
     // SISTEMA puede ver todos los usuarios de todas las tiendas
     // Si hay override de tienda (isGlobalOverride), filtrar por esa tienda
     const isSistema = getActorRole(user) === 'SISTEMA' || user.isSistema;
     const canSeeAll = isSistema && !user.isGlobalOverride;
     
-    console.log('isSistema:', isSistema, 'isGlobalOverride:', user.isGlobalOverride, 'canSeeAll:', canSeeAll);
     
     const whereClause = canSeeAll ? {} : { storeId: user.storeId };
     const response = await prisma.user.findMany({
         where: whereClause,
         include: { rbacRole: true }
     });
-    console.log('Empleados Cargados:', response.length);
     return response.map(mapUserResponse);
 }
 
 const getById = async (id, user) => {
-    console.log(`Trayendo empleado con ID: ${id}`);
     // SISTEMA puede ver cualquier usuario
     const isSistema = getActorRole(user) === 'SISTEMA' || user.isSistema;
     const whereClause = isSistema ? { id: id } : { id: id, storeId: user.storeId };
@@ -225,12 +223,10 @@ const getById = async (id, user) => {
     if (!response) {
         throw new Error(`Empleado con ID ${id} no encontrado`);
     }
-    console.log('Empleado encontrado:');
     return mapUserResponse(response);
 }
 
 const update = async (id, dataEmployee, user) => {
-    console.log(`actualizando empleado con ID: ${id}`);
 
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const existing = await prisma.user.findFirst({
@@ -281,12 +277,10 @@ const update = async (id, dataEmployee, user) => {
         data: cleanData,
         include: { rbacRole: true }
     });
-    console.log('Empleado Actualizado:');
     return mapUserResponse(response);
 }
 
 const setActiveStatus = async (id, isActive, user) => {
-    console.log(`${isActive ? "Habilitando" : "Deshabilitando"} empleado con ID: ${id}`);
     
     // 1. Verificar Sudo Mode en lugar de contraseña en el body
     verifySudoMode(user.req);
@@ -300,7 +294,6 @@ const setActiveStatus = async (id, isActive, user) => {
         data: { isActive }
     });
 
-    console.log(`Empleado ${isActive ? "habilitado" : "deshabilitado"}`);
 
     return response;
 }

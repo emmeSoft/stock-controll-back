@@ -94,13 +94,7 @@ const uploadImage = async (req, res) => {
       });
 
     const result = await uploadToCloudinary();
-      console.log('asdadas', {
-        url: result.secure_url,
-        altText: req.body.altText || "",
-        isMain: req.body.isMain === "true" || false,
-        order: Number(req.body.order ?? 0),
-        [dynamicKey]: entityId, // ← súper dinámico
-      },)
+
     // 3. Guardar imagen en DB (incluyendo cloudinaryId para poder eliminar luego)
     const image = await prisma.image.create({
       data: {
