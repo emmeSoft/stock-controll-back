@@ -4,8 +4,9 @@
  */
 const rbacService = require('../services/rbacService');
 
-// Feature flag global
+// Feature flags
 const RBAC_ENABLED = process.env.RBAC_ENABLED === 'true';
+const RBAC_SHADOW = process.env.RBAC_SHADOW === 'true';
 
 /**
  * Middleware que verifica permisos atómicos
@@ -35,13 +36,16 @@ const requirePermission = (permission) => {
         });
       }
 
-      // Si RBAC está deshabilitado, pasar directamente
-      if (!RBAC_ENABLED) {
-        console.log(`[RBAC-SHADOW] ${req.method} ${req.originalUrl} - User: ${userId}, Permission: ${permission}`);
-        return next();
+      // Fail-safe: if RBAC not explicitly enabled, deny by default
+      if (!RBAC_ENABLED && !RBAC_SHADOW) {
+        console.warn(`[RBAC] Access denied: RBAC not enabled (RBAC_ENABLED=${process.env.RBAC_ENABLED}, RBAC_SHADOW=${process.env.RBAC_SHADOW}). User: ${userId}, Permission: ${permission}`);
+        return res.status(403).json({
+          error: 'FORBIDDEN',
+          message: 'RBAC no está habilitado. Acceso denegado por seguridad.'
+        });
       }
 
-      // Verificar permiso
+      // Verificar permiso (el servicio ya maneja shadow mode)
       const hasPermission = await rbacService.checkPermission({
         userId,
         storeId,

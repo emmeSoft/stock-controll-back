@@ -7,6 +7,7 @@ const permissionsCache = require('./permissionsCache');
 
 // Feature flag para modo shadow (solo loguea, no bloquea)
 const RBAC_ENABLED = process.env.RBAC_ENABLED === 'true';
+const RBAC_SHADOW = process.env.RBAC_SHADOW === 'true';
 
 /**
  * Verifica si el usuario tiene un permiso específico
@@ -17,12 +18,19 @@ const RBAC_ENABLED = process.env.RBAC_ENABLED === 'true';
  * @returns {Promise<boolean>} true si tiene permiso, false si no
  */
 async function checkPermission({ userId, storeId, permission }) {
-  // Si RBAC está deshabilitado, permitir todo (shadow mode)
-  if (!RBAC_ENABLED) {
-    console.log(`[RBAC-SHADOW] Would check: ${permission} for user ${userId} in store ${storeId}`);
+  // Fail-safe: if RBAC not explicitly enabled, deny by default
+  if (!RBAC_ENABLED && !RBAC_SHADOW) {
+    console.warn(`[RBAC] Access denied: RBAC not enabled (RBAC_ENABLED=${process.env.RBAC_ENABLED}, RBAC_SHADOW=${process.env.RBAC_SHADOW}). User: ${userId}, Permission: ${permission}, Store: ${storeId}`);
+    return false;
+  }
+
+  // Shadow mode: log but allow
+  if (RBAC_SHADOW && !RBAC_ENABLED) {
+    console.log(`[RBAC-SHADOW] Would check: ${permission} for user ${userId} in store ${storeId} (SHADOW MODE)`);
     return true;
   }
 
+  // Enforced mode (RBAC_ENABLED === true)
   try {
     // 1. Obtener usuario con su rol y permisos
     const user = await prisma.user.findUnique({

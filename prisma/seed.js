@@ -22,6 +22,14 @@ async function main() {
   console.log('🌱 Seed multi-tenant iniciado');
 
   const hashedPassword = await bcrypt.hash('123456', 10);
+  const roles = await prisma.role.findMany({
+    where: { name: { in: ['ADMINISTRADOR', 'VENDEDOR'] } }
+  });
+  const roleIdsByName = Object.fromEntries(roles.map((role) => [role.name, role.id]));
+
+  if (!roleIdsByName.ADMINISTRADOR || !roleIdsByName.VENDEDOR) {
+    throw new Error('Faltan roles RBAC base. Ejecutá primero el seed de RBAC para crear ADMINISTRADOR y VENDEDOR.');
+  }
 
   const storesConfig = [
     {
@@ -59,25 +67,24 @@ async function main() {
 
       /* ========= USERS ========= */
 
-      const createUser = (email, role) =>
+      const createUser = (email, roleName) =>
         tx.user.create({
           data: {
             storeId: store.id,
             email,
             password: hashedPassword,
-            tempPassword: "0000",
             mustChangePassword: true,
             firstName: faker.person.firstName(),
             lastName: faker.person.lastName(),
             phoneNumber: faker.phone.number(),
             address: faker.location.streetAddress(),
             city: faker.location.city(),
-            role,
+            roleId: roleIdsByName[roleName],
           },
         });
 
-      await createUser(config.adminEmail, 'ADMIN');
-      await createUser(config.userEmail, 'USUARIO');
+      await createUser(config.adminEmail, 'ADMINISTRADOR');
+      await createUser(config.userEmail, 'VENDEDOR');
 
       /* ========= CATEGORIES ========= */
 

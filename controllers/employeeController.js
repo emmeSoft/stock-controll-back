@@ -38,6 +38,7 @@ const updateEmployee = async (req, res) => {
   const dataEmployee = req.body;
   try {
     const result = await employeeServices.update(id, dataEmployee, req.user);
+    res.clearCookie('sudo');
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error.message });

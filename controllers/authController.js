@@ -1,6 +1,14 @@
 const authServices = require('../services/authServices');
 const prisma = require('../db/database.prisma');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+const buildCookieOptions = (maxAge) => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict',
+  maxAge
+});
 
 const login = async (req, res) => {
   const { email, password } = req.body;
@@ -10,16 +18,17 @@ const login = async (req, res) => {
     
     // Si requiere cambio de password
     if (result.requiresPasswordChange) {
-      return res.json(result); 
+      res.cookie('token', result.setupToken, buildCookieOptions(10 * 60 * 1000));
+
+      return res.json({
+        message: result.message,
+        requiresPasswordChange: true,
+        user: result.user
+      }); 
     }
 
     // Setear la cookie
-    res.cookie('token', result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 60 * 60 * 1000 // 1 h
-    });
+    res.cookie('token', result.token, buildCookieOptions(60 * 60 * 1000));
 
     res.json({ message: result.message, user: result.user });
   } catch (error) {
@@ -27,13 +36,66 @@ const login = async (req, res) => {
   }
 };
 
+const setupPassword = async (req, res) => {
+  const { newPassword } = req.body;
+  const token = req.cookies?.token;
+
+  if (!token) {
+    return res.status(401).json({ message: 'La sesión de configuración expiró. Iniciá sesión nuevamente con un nuevo PIN.' });
+  }
+
+  if (!newPassword || !newPassword.trim()) {
+    return res.status(400).json({ message: 'La nueva contraseña es obligatoria.' });
+  }
+
+  if (newPassword.trim().length < 8) {
+    return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 8 caracteres.' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (decoded.purpose !== 'password-setup') {
+      return res.status(403).json({ message: 'El token actual no es válido para definir la contraseña.' });
+    }
+
+    const result = await authServices.changeInitialPassword(decoded.id, newPassword.trim());
+
+    res.cookie('token', result.token, buildCookieOptions(60 * 60 * 1000));
+
+    return res.json({
+      message: result.message,
+      user: result.user
+    });
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'La sesión de configuración expiró. Solicitá un nuevo PIN al administrador.' });
+    }
+
+    return res.status(400).json({ message: error.message || 'No se pudo actualizar la contraseña.' });
+  }
+};
+
 const checkAuth = async (req, res) => {
     try {
         const user = await prisma.user.findUnique({
             where: { id: req.user.id },
-            select: { id: true, email: true, firstName: true, lastName: true, role: true, storeId: true, profilePicture: true }
+            include: { rbacRole: true }
         });
-        res.json(user);
+
+        if (!user) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+
+        res.json({
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: user.rbacRole?.name || null,
+            storeId: user.storeId,
+            profilePicture: user.profilePicture
+        });
     } catch (error) {
         res.status(500).json({ message: "Error al verificar sesión" });
     }
@@ -80,4 +142,4 @@ const logout = async (req, res) => {
 
 
 
-module.exports = { login, checkAuth, verifySudo, logout };
+module.exports = { login, setupPassword, checkAuth, verifySudo, logout };
