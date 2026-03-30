@@ -51,7 +51,7 @@ exports.getSellerPerformance = async (req, res) => {
     const users = userIds.length
       ? await prisma.user.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, firstName: true, lastName: true, role: true, profilePicture: true },
+          include: { rbacRole: true },
         })
       : [];
 
@@ -66,7 +66,7 @@ exports.getSellerPerformance = async (req, res) => {
         userId:         agg.userId,
         firstName:      user?.firstName     || 'Desconocido',
         lastName:       user?.lastName      || '',
-        role:           user?.role          || 'USUARIO',
+        role:           user?.rbacRole?.name || 'VENDEDOR',
         profilePicture: user?.profilePicture || null,
         salesCount:     agg._count.id,
         totalAmount:    amount,

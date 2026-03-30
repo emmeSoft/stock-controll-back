@@ -74,8 +74,13 @@ const create = async (dataProduct, user) => {
 const getAll = async (user, filters = {}) => {
     console.log('Fetching all products with filters:', filters);
 
+    // SISTEMA puede ver todos los productos si no hay override de tienda
+    // Si hay override (isGlobalOverride), filtra por esa tienda
+    const isSistema = user.role === 'SISTEMA' || user.isSistema;
+    const canSeeAll = isSistema && !user.isGlobalOverride;
+
     const whereClause = {
-        ...(user.storeId ? { storeId: user.storeId } : {}),
+        ...(canSeeAll ? {} : (user.storeId ? { storeId: user.storeId } : {})),
         ...(filters.categoryId ? { categoryId: filters.categoryId } : {})
     };
 

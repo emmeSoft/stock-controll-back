@@ -134,7 +134,10 @@ const create = async (saleData, user) => {
 };
 
 const getAll = async (user) => {
-  const whereClause = user.storeId ? { storeId: user.storeId } : {};
+  // SISTEMA puede ver todas las ventas si no hay override de tienda
+  const isSistema = user.role === 'SISTEMA' || user.isSistema;
+  const canSeeAll = isSistema && !user.isGlobalOverride;
+  const whereClause = canSeeAll ? {} : { storeId: user.storeId };
   return await prisma.order.findMany({
     where: whereClause,
     orderBy: { createdAt: 'desc' },

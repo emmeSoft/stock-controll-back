@@ -14,7 +14,10 @@ const create = async (dataClient, user) => {
 
 const getAll = async (user) => {
     console.log('Fetching all clients...');
-    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+    // SISTEMA puede ver todos los clientes si no hay override de tienda
+    const isSistema = user.role === 'SISTEMA' || user.isSistema;
+    const canSeeAll = isSistema && !user.isGlobalOverride;
+    const whereClause = canSeeAll ? {} : { storeId: user.storeId };
     const response = await prisma.client.findMany({ where: whereClause });
     console.log('Clients fetched:');
     return response;

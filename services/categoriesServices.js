@@ -42,7 +42,10 @@ const create = async (dataCategory, user) => {
 
 const getAll = async (user) => {
     console.log('Fetching all categories...');
-    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+    // SISTEMA puede ver todas las categorías si no hay override de tienda
+    const isSistema = user.role === 'SISTEMA' || user.isSistema;
+    const canSeeAll = isSistema && !user.isGlobalOverride;
+    const whereClause = canSeeAll ? {} : { storeId: user.storeId };
     const response = await prisma.categories.findMany({ where: whereClause });
     console.log('Categories fetched:');
     return response;

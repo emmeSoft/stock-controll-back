@@ -1,46 +1,174 @@
 const prisma = require(`../db/database.prisma`);
 const bcrypt = require('bcrypt');
-const ALLOWED_ROLES = ["SUPERADMIN", "ADMIN", "USUARIO"];
+const crypto = require('crypto');
+// Roles nuevos: SISTEMA, ADMINISTRADOR, ENCARGADO, VENDEDOR
+const ALLOWED_ROLES = ["SISTEMA", "ADMINISTRADOR", "ENCARGADO", "VENDEDOR"];
 const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
-const verifyAdminPassword = async (adminId, adminPassword) => {
-    if (!adminPassword) throw new Error("La contraseña del administrador es requerida.");
-    const adminRecord = await prisma.user.findUnique({ where: { id: adminId } });
-    if (!adminRecord) throw new Error("Administrador no encontrado");
-
-    const isAdminPasswordValid = await bcrypt.compare(adminPassword, adminRecord.password);
-    if (!isAdminPasswordValid) throw new Error("Contraseña de administrador incorrecta. Autorización denegada.");
+const verifySudoMode = (req) => {
+    if (!req.cookies || req.cookies.sudo !== 'true') {
+        throw new Error("Acción bloqueada. Se requiere validación reciente de contraseña (Sudo Mode).");
+    }
     return true;
 };
 
+const getRoleName = (roleValue) => {
+    if (!roleValue) return null;
+    if (typeof roleValue === 'string') return roleValue;
+    return roleValue.name || null;
+};
+
+const getActorRole = (user) => getRoleName(user?.rbacRole) || user?.role;
+
+const assertAllowedRole = (roleName) => {
+    if (!ALLOWED_ROLES.includes(roleName)) {
+        throw new Error('Rol inválido');
+    }
+
+    return roleName;
+};
+
+const resolveRole = async (roleName) => {
+    const normalizedRole = assertAllowedRole(roleName);
+    const roleRecord = await prisma.role.findUnique({ where: { name: normalizedRole } });
+
+    if (!roleRecord) {
+        throw new Error(`No existe el rol RBAC "${normalizedRole}" configurado en la base de datos.`);
+    }
+
+    return roleRecord;
+};
+
+const mapUserResponse = (userRecord) => {
+    if (!userRecord) return userRecord;
+
+    return {
+        ...userRecord,
+        role: getRoleName(userRecord.rbacRole) || userRecord.role || null
+    };
+};
+
+const normalizeUserData = async (dataEmployee, { keepEmptyStrings = false } = {}) => {
+    const allowedFields = [
+        'name',
+        'fullName',
+        'firstName',
+        'lastName',
+        'email',
+        'password',
+        'phoneNumber',
+        'address',
+        'city',
+        'dni',
+        'cuit',
+        'description',
+        'price',
+        'stock',
+        'profilePicture',
+        'isActive'
+    ];
+
+    const cleanData = Object.fromEntries(
+        Object.entries(dataEmployee).filter(
+            ([key, value]) => allowedFields.includes(key) && value !== undefined && (keepEmptyStrings || value !== '')
+        )
+    );
+
+    if ('dni' in cleanData) {
+        const normalized = normalizeDni(cleanData.dni);
+
+        if (!isValidDni(normalized)) {
+            throw new Error('DNI inválido');
+        }
+
+        cleanData.dni = normalized;
+    }
+
+    if ('email' in cleanData) {
+        const normalized = normalizeEmail(cleanData.email);
+
+        if (!isValidEmail(normalized)) {
+            throw new Error('Email inválido');
+        }
+
+        cleanData.email = normalized;
+    }
+
+    if ('cuit' in cleanData) {
+        const normalized = normalizeCuit(cleanData.cuit);
+
+        if (!isValidCuit(normalized)) {
+            throw new Error('CUIT inválido');
+        }
+
+        cleanData.cuit = normalized;
+    }
+
+    if ('phoneNumber' in cleanData) {
+        const normalized = normalizeArPhone(cleanData.phoneNumber);
+
+        if (!isValidArPhone(normalized)) {
+            throw new Error('Número de teléfono inválido');
+        }
+
+        cleanData.phoneNumber = normalized;
+    }
+
+    return cleanData;
+};
+
+const ensureAdminPinAuthority = (user) => {
+    const actorRole = getActorRole(user);
+
+    if (actorRole !== 'SISTEMA' && actorRole !== 'ADMINISTRADOR') {
+        throw new Error('Solo SISTEMA o ADMINISTRADOR pueden crear usuarios o blanquear claves.');
+    }
+};
+
+const generateTemporaryPin = () => crypto.randomInt(1000, 10000).toString();
+
 const create = async (dataEmployee, user) => {
     console.log('Creando Empleado...');
+    ensureAdminPinAuthority(user);
+
+    const requestedRoleName = assertAllowedRole(dataEmployee.role);
+    const targetRole = await resolveRole(requestedRoleName);
+    const cleanData = await normalizeUserData(dataEmployee);
+
+    // 0. Verificar si el email ya existe para evitar error de constraint
+    const existingEmail = await prisma.user.findUnique({ where: { email: cleanData.email } });
+    if (existingEmail) {
+        throw new Error(`El email "${cleanData.email}" ya está registrado en el sistema.`);
+    }
     
-    // Un ADMIN no puede crear un SUPERADMIN
-    if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
-        throw new Error('No tienes permisos para crear un usuario de nivel SUPERADMIN.');
+    // Un ADMINISTRADOR no puede crear un SISTEMA
+    if (getActorRole(user) === 'ADMINISTRADOR' && requestedRoleName === 'SISTEMA') {
+        throw new Error('No tienes permisos para crear un usuario de nivel SISTEMA.');
     }
 
-    // Si se crea un ADMIN o SUPERADMIN, verificar contraseña del creador
-    if (dataEmployee.role === 'ADMIN' || dataEmployee.role === 'SUPERADMIN') {
-        await verifyAdminPassword(user.id, dataEmployee.adminPassword);
+    // Si se crea un ADMINISTRADOR o SISTEMA, verificar Sudo Mode
+    if (requestedRoleName === 'ADMINISTRADOR' || requestedRoleName === 'SISTEMA') {
+        verifySudoMode(user.req); // Pasamos req para chequear cookies
     }
-    // Ya validada, quitamos el adminPassword para que no interfiera
+    
+    // Ya validada la autoridad, quitamos el adminPassword del body si venía
     delete dataEmployee.adminPassword;
 
-    // El empleado se asigna a la tienda del creador (a menos que el creador sea un SUPERADMIN y haya especificado storeId explicitamente)
-    // El middleware authMiddleware inyecta el x-store-id en user.storeId temporalmente si es "SUPERADMIN"
+    // El empleado se asigna a la tienda del creador (a menos que el creador sea SISTEMA y haya especificado storeId explicitamente)
+    // El middleware authMiddleware inyecta el x-store-id en user.storeId temporalmente si es "SISTEMA"
     let assignedStoreId = user.storeId;
-    if (user.role === 'SUPERADMIN' && dataEmployee.storeId) {
+    if (getActorRole(user) === 'SISTEMA' && dataEmployee.storeId) {
         assignedStoreId = dataEmployee.storeId;
     }
 
-    if (!assignedStoreId) {
+    // SISTEMA puede no tener tienda asignada (es global)
+    // Pero si está creando un usuario que no sea SISTEMA, necesita tienda
+    if (!assignedStoreId && requestedRoleName !== 'SISTEMA') {
        throw new Error('Debe seleccionar una tienda para asignar al empleado.');
     }
 
     // Generar un PIN aleatorio de 4 dígitos
-    const tempPin = Math.floor(1000 + Math.random() * 9000).toString();
+    const tempPin = generateTemporaryPin();
     const hashedPassword = await bcrypt.hash(tempPin, 10);
 
     // No tomamos `dataEmployee.password` enviado por frontend (se ignorará si lo mandan)
@@ -48,31 +176,45 @@ const create = async (dataEmployee, user) => {
 
     const response = await prisma.user.create({ 
         data: { 
-            ...dataEmployee, 
+            ...cleanData,
             password: hashedPassword, 
-            tempPassword: tempPin,
             mustChangePassword: true,
-            storeId: assignedStoreId 
-        } 
+            storeId: assignedStoreId,
+            roleId: targetRole.id
+        },
+        include: { rbacRole: true }
     });
-    console.log(`Empleado creado con PIN temporal: ${tempPin}`);
-    return { ...response, generatedPin: tempPin }; // Retornamos el PIN para que el frontend lo vea
+    
+    return { ...mapUserResponse(response), generatedPin: tempPin }; // Regla Negocio: Retorna solo en tiempo de req
 }
 
 const getAll = async (user) => {
-    console.log('Trayendo todos los empleados...');
-    const whereClause = user.storeId ? { storeId: user.storeId } : {};
-    const response = await prisma.user.findMany({ where: whereClause });
-    console.log('Empleados Cargados:');
-    return response;
+    console.log('Trayendo todos los empleados...', user);
+    // SISTEMA puede ver todos los usuarios de todas las tiendas
+    // Si hay override de tienda (isGlobalOverride), filtrar por esa tienda
+    const isSistema = getActorRole(user) === 'SISTEMA' || user.isSistema;
+    const canSeeAll = isSistema && !user.isGlobalOverride;
+    
+    console.log('isSistema:', isSistema, 'isGlobalOverride:', user.isGlobalOverride, 'canSeeAll:', canSeeAll);
+    
+    const whereClause = canSeeAll ? {} : { storeId: user.storeId };
+    const response = await prisma.user.findMany({
+        where: whereClause,
+        include: { rbacRole: true }
+    });
+    console.log('Empleados Cargados:', response.length);
+    return response.map(mapUserResponse);
 }
 
 const getById = async (id, user) => {
     console.log(`Trayendo empleado con ID: ${id}`);
-    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
+    // SISTEMA puede ver cualquier usuario
+    const isSistema = getActorRole(user) === 'SISTEMA' || user.isSistema;
+    const whereClause = isSistema ? { id: id } : { id: id, storeId: user.storeId };
     const response = await prisma.user.findFirst({
         where: whereClause,
         include: {
+            rbacRole: true,
             Image: {
                 orderBy: {
                     order: "asc" // 👈 orden visual correcto
@@ -84,114 +226,70 @@ const getById = async (id, user) => {
         throw new Error(`Empleado con ID ${id} no encontrado`);
     }
     console.log('Empleado encontrado:');
-    return response;
+    return mapUserResponse(response);
 }
 
 const update = async (id, dataEmployee, user) => {
     console.log(`actualizando empleado con ID: ${id}`);
 
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
-    const existing = await prisma.user.findFirst({ where: whereClause });
+    const existing = await prisma.user.findFirst({
+        where: whereClause,
+        include: { rbacRole: true }
+    });
     if (!existing) throw new Error("Empleado no encontrado o denegado");
+
+    const requestedRoleName = dataEmployee.role ? assertAllowedRole(dataEmployee.role) : null;
+    const currentRoleName = getRoleName(existing.rbacRole);
     
-    // Un ADMIN no puede promoverse o promover a alguien a SUPERADMIN
-    if (user.role === 'ADMIN' && dataEmployee.role === 'SUPERADMIN') {
-        throw new Error('No tienes permisos para otorgar nivel SUPERADMIN.');
+    // Un ADMINISTRADOR no puede promoverse o promover a alguien a SISTEMA
+    if (getActorRole(user) === 'ADMINISTRADOR' && requestedRoleName === 'SISTEMA') {
+        throw new Error('No tienes permisos para otorgar nivel SISTEMA.');
     }
 
-    if (dataEmployee.role && dataEmployee.role !== existing.role) {
-        await verifyAdminPassword(user.id, dataEmployee.adminPassword);
+    if (requestedRoleName && requestedRoleName !== currentRoleName) {
+        verifySudoMode(user.req);
     }
 
-    const allowedFields = [
-        "name",
-        "fullName",
-        "firstName",
-        "lastName",
-        "email",
-        "password",
-        "phoneNumber",
-        "address",
-        "city",
-        "dni",
-        "cuit",
-        "description",
-        "price",
-        "stock",
-        "profilePicture",
-        "isActive",
-
-    ];
-
-    const cleanData = Object.fromEntries(
-        Object.entries(dataEmployee).filter(
-            ([key, value]) => allowedFields.includes(key) && value !== undefined && value !== ""
-        )
-    );
-
-    if ("role" in cleanData) {
-        if (!ALLOWED_ROLES.includes(cleanData.role)) {
-            throw new Error("Rol inválido");
-        }
-    }
+    const cleanData = await normalizeUserData(dataEmployee);
 
     // Hash password if updating
     if (cleanData.password) {
         cleanData.password = await bcrypt.hash(cleanData.password, 10);
     }
 
-    if ("dni" in cleanData) {
-        const normalized = normalizeDni(cleanData.dni);
-
-        if (!isValidDni(normalized)) {
-            throw new Error("DNI inválido");
-        }
-
-        cleanData.dni = normalized;
-    }
-
     if ("email" in cleanData) {
-        const normalized = normalizeEmail(cleanData.email);
-
-        if (!isValidEmail(normalized)) {
-            throw new Error("Email inválido");
+        // Verificar si el nuevo email ya lo tiene otro usuario
+        const emailConflict = await prisma.user.findFirst({
+            where: {
+                email: cleanData.email,
+                NOT: { id: id }
+            }
+        });
+        if (emailConflict) {
+            throw new Error(`El email "${cleanData.email}" ya está siendo utilizado por otro empleado.`);
         }
-
-        cleanData.email = normalized;
     }
 
-    if ("cuit" in cleanData) {
-        const normalized = normalizeCuit(cleanData.cuit);
-
-        if (!isValidCuit(normalized)) {
-            throw new Error("CUIT inválido");
-        }
-
-        cleanData.cuit = normalized;
-    }
-
-    if ("phoneNumber" in cleanData) {
-        const normalized = normalizeArPhone(cleanData.phoneNumber);
-
-        if (!isValidArPhone(normalized)) {
-            throw new Error("Número de teléfono inválido");
-        }
-
+    if (requestedRoleName) {
+        const targetRole = await resolveRole(requestedRoleName);
+        cleanData.roleId = targetRole.id;
     }
 
     const response = await prisma.user.update({
         where: { id: id },
-        data: cleanData
+        data: cleanData,
+        include: { rbacRole: true }
     });
     console.log('Empleado Actualizado:');
-    return response;
+    return mapUserResponse(response);
 }
 
-const setActiveStatus = async (id, isActive, adminPassword, user) => {
+const setActiveStatus = async (id, isActive, user) => {
     console.log(`${isActive ? "Habilitando" : "Deshabilitando"} empleado con ID: ${id}`);
     
-    // 1. Verificar la contraseña del administrador obligatoriamente
-    await verifyAdminPassword(user.id, adminPassword);
+    // 1. Verificar Sudo Mode en lugar de contraseña en el body
+    verifySudoMode(user.req);
     
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const existing = await prisma.user.findFirst({ where: whereClause });
@@ -206,34 +304,38 @@ const setActiveStatus = async (id, isActive, adminPassword, user) => {
 
     return response;
 }
-const resetPassword = async (employeeId, adminPassword, adminUser) => {
-    // 1. Verificar la contraseña del administrador
-    await verifyAdminPassword(adminUser.id, adminPassword);
+const resetPassword = async (employeeId, adminUser) => {
+    ensureAdminPinAuthority(adminUser);
+
+    // 1. Verificar Sudo Mode
+    verifySudoMode(adminUser.req);
 
     // 2. Buscar al empleado a blanquear
-    const whereClause = adminUser.storeId ? { id: employeeId, storeId: adminUser.storeId } : { id: employeeId };
-    const employeeRecord = await prisma.user.findFirst({ where: whereClause });
+    const isAdminSistema = getActorRole(adminUser) === 'SISTEMA' || adminUser.isSistema;
+    const whereClause = isAdminSistema ? { id: employeeId } : { id: employeeId, storeId: adminUser.storeId };
+    const employeeRecord = await prisma.user.findFirst({
+        where: whereClause,
+        include: { rbacRole: true }
+    });
     if (!employeeRecord) throw new Error("Empleado no encontrado o no pertenece a tu tienda.");
 
-    // No se puede blanquear un superadmin por este medio
-    if (employeeRecord.role === 'SUPERADMIN' && adminUser.role !== 'SUPERADMIN') {
-        throw new Error("No tienes permisos para blanquear la clave de un SUPERADMIN.");
+    // No se puede blanquear un SISTEMA por este medio (solo el propio SISTEMA puede)
+    if (employeeRecord.rbacRole?.name === 'SISTEMA' && !isAdminSistema) {
+        throw new Error("No tienes permisos para blanquear la clave de un usuario SISTEMA.");
     }
 
     // 3. Generar nuevo PIN y actualizar
-    const newTempPin = Math.floor(1000 + Math.random() * 9000).toString();
+    const newTempPin = generateTemporaryPin();
     const hashedPassword = await bcrypt.hash(newTempPin, 10);
 
     const updatedEmployee = await prisma.user.update({
         where: { id: employeeId },
         data: {
             password: hashedPassword,
-            tempPassword: newTempPin,
             mustChangePassword: true
         }
     });
 
-    console.log(`Clave blanqueada para ${updatedEmployee.email}. Nuevo PIN: ${newTempPin}`);
     return { 
         message: "Clave blanqueada exitosamente.", 
         newPin: newTempPin,
