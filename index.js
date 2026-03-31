@@ -62,6 +62,7 @@ const cajaRoutes = require('./routes/cajaRoutes');
 const movimientosRoutes = require('./routes/movimientosRoutes');
 const stockHistoryRoutes = require('./routes/stockHistoryRoutes');
 const sellerPerformanceRoutes = require('./routes/sellerPerformanceRoutes');
+const discountRoutes = require('./routes/discountRoutes');
 
 app.use(cors({
   origin: ["http://localhost:5173", "http://localhost:5174"],
@@ -86,6 +87,7 @@ app.use("/api/caja", cajaRoutes);
 app.use("/api/movimientos", movimientosRoutes);
 app.use("/api/stock-history", stockHistoryRoutes);
 app.use("/api/seller-performance", sellerPerformanceRoutes);
+app.use("/api/discounts", discountRoutes);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);

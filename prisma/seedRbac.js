@@ -85,6 +85,12 @@ const PERMISSIONS = [
   // INTEGRACIONES
   { name: 'integration.read', category: 'INTEGRACIONES', description: 'Ver integraciones' },
   { name: 'integration.update', category: 'INTEGRACIONES', description: 'Editar integraciones' },
+
+  // DESCUENTOS
+  { name: 'discount.create', category: 'DESCUENTOS', description: 'Crear reglas de descuento' },
+  { name: 'discount.read',   category: 'DESCUENTOS', description: 'Ver reglas de descuento' },
+  { name: 'discount.update', category: 'DESCUENTOS', description: 'Editar reglas de descuento' },
+  { name: 'discount.delete', category: 'DESCUENTOS', description: 'Desactivar reglas de descuento (soft delete)' },
 ];
 
 const ROLES = [
@@ -112,6 +118,7 @@ const ROLE_PERMISSIONS = {
     'config.read', 'config.update',
     'audit.read', 'audit.export',
     'integration.read', 'integration.update',
+    'discount.create', 'discount.read', 'discount.update', 'discount.delete',
   ],
   ENCARGADO: [
     'user.read',
@@ -127,6 +134,7 @@ const ROLE_PERMISSIONS = {
     'caja.open', 'caja.close', 'caja.read',
     'config.read',
     'integration.read',
+    'discount.create', 'discount.read', 'discount.update', 'discount.delete',
   ],
   VENDEDOR: [
     'product.read',
@@ -138,6 +146,7 @@ const ROLE_PERMISSIONS = {
     'movimiento.create', 'movimiento.read',
     'report.sales',
     'caja.open', 'caja.close', 'caja.read',
+    'discount.read',
   ],
 };
 
