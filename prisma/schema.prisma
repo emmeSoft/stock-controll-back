@@ -419,6 +419,20 @@ model DiscountRule {
   // LIMITED_STOCK: { productIds: String[], maxUnits: Int }
   conditions    Json
 
+  // ─── Universal Discount Rules ─────────────────────────────────────
+  // Control por regla: "legacy" = 8 tipos rígidos, "universal" = campos composables
+  engineVersion     String         @default("legacy")
+  
+  // Estructura universal (convive con conditions para backward compatibility):
+  // {
+  //   target: { productIds: string[], categoryIds: string[] } | null,
+  //   ticketConditions: { paymentMethods: string[], minAmount: number, allClients: boolean, clientIds: string[] },
+  //   itemConditions: { minQuantity: number },
+  //   constraints: { maxUnits: number }
+  // }
+  conditionsUniversal Json?
+  // ─────────────────────────────────────────────────────────────────
+
   priority      Int             @default(0)  // Mayor valor = se evalúa primero
 
   // Autocalculado del type — NO se acepta del request (AXIOMA 1)

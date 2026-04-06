@@ -69,6 +69,8 @@ function validateRuleBody({ type, percentage, conditions }) {
  * Lista todas las reglas de la tienda (activas + inactivas).
  */
 const getAll = async (storeId) => {
+  if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
+  
   return prisma.discountRule.findMany({
     where:   { storeId },
     orderBy: [{ isActive: 'desc' }, { priority: 'desc' }, { createdAt: 'desc' }],
@@ -80,6 +82,8 @@ const getAll = async (storeId) => {
  * Obtiene una regla por ID, validando que pertenece a la tienda.
  */
 const getById = async (id, storeId) => {
+  if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
+  
   const rule = await prisma.discountRule.findFirst({
     where:   { id, storeId },
     include: { creator: { select: { id: true, fullName: true, email: true } } },
@@ -138,6 +142,8 @@ const update = async (id, body, user) => {
  */
 const deactivate = async (id, user) => {
   const storeId = user.storeId;
+  if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
+  
   await getById(id, storeId); // verifica ownership
 
   return prisma.discountRule.update({
@@ -151,6 +157,8 @@ const deactivate = async (id, user) => {
  */
 const activate = async (id, user) => {
   const storeId = user.storeId;
+  if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
+  
   await getById(id, storeId);
 
   return prisma.discountRule.update({

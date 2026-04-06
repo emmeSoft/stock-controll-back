@@ -100,4 +100,125 @@ function validateConditions(type, conditions) {
   }
 }
 
-module.exports = { validateConditions };
+// ─────────────────────────────────────────────────────────────────
+// Validación Dual: legacy vs universal
+// ─────────────────────────────────────────────────────────────────
+
+const UNIVERSAL_SCHEMA = {
+  target: {
+    productIds: (v) => Array.isArray(v) ? null : 'productIds debe ser array',
+    categoryIds: (v) => Array.isArray(v) ? null : 'categoryIds debe ser array',
+  },
+  ticketConditions: {
+    paymentMethods: (v) => (Array.isArray(v) || !v) ? null : 'paymentMethods debe ser array',
+    minAmount: (v) => (typeof v === 'number' || !v) ? null : 'minAmount debe ser número',
+    allClients: (v) => (typeof v === 'boolean' || !v) ? null : 'allClients debe ser boolean',
+    clientIds: (v) => (Array.isArray(v) || !v) ? null : 'clientIds debe ser array',
+  },
+  itemConditions: {
+    minQuantity: (v) => (typeof v === 'number' || !v) ? null : 'minQuantity debe ser número',
+  },
+  constraints: {
+    maxUnits: (v) => (typeof v === 'number' || !v) ? null : 'maxUnits debe ser número',
+  },
+};
+
+/**
+ * Valida conditions para reglas universales.
+ * @param {object} conditions - conditionsUniversal
+ * @returns {string|null} - error message or null if valid
+ */
+function validateConditionsUniversal(conditions) {
+  if (!conditions || typeof conditions !== 'object') {
+    return 'conditionsUniversal debe ser un objeto';
+  }
+
+  // Validar target
+  if (conditions.target !== undefined && conditions.target !== null) {
+    if (typeof conditions.target !== 'object') {
+      return 'target debe ser un objeto';
+    }
+    const { productIds, categoryIds } = conditions.target;
+    if (productIds !== undefined) {
+      const err = UNIVERSAL_SCHEMA.target.productIds(productIds);
+      if (err) return `target.productIds: ${err}`;
+    }
+    if (categoryIds !== undefined) {
+      const err = UNIVERSAL_SCHEMA.target.categoryIds(categoryIds);
+      if (err) return `target.categoryIds: ${err}`;
+    }
+  }
+
+  // Validar ticketConditions
+  if (conditions.ticketConditions) {
+    if (typeof conditions.ticketConditions !== 'object') {
+      return 'ticketConditions debe ser un objeto';
+    }
+    const tc = conditions.ticketConditions;
+    for (const [key, validator] of Object.entries(UNIVERSAL_SCHEMA.ticketConditions)) {
+      if (tc[key] !== undefined) {
+        const err = validator(tc[key]);
+        if (err) return `ticketConditions.${key}: ${err}`;
+      }
+    }
+  }
+
+  // Validar itemConditions
+  if (conditions.itemConditions) {
+    if (typeof conditions.itemConditions !== 'object') {
+      return 'itemConditions debe ser un objeto';
+    }
+    const ic = conditions.itemConditions;
+    for (const [key, validator] of Object.entries(UNIVERSAL_SCHEMA.itemConditions)) {
+      if (ic[key] !== undefined) {
+        const err = validator(ic[key]);
+        if (err) return `itemConditions.${key}: ${err}`;
+      }
+    }
+  }
+
+  // Validar constraints
+  if (conditions.constraints) {
+    if (typeof conditions.constraints !== 'object') {
+      return 'constraints debe ser un objeto';
+    }
+    const c = conditions.constraints;
+    for (const [key, validator] of Object.entries(UNIVERSAL_SCHEMA.constraints)) {
+      if (c[key] !== undefined) {
+        const err = validator(c[key]);
+        if (err) return `constraints.${key}: ${err}`;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Valida conditions según el engineVersion de la regla.
+ * @param {object} conditions - conditions o conditionsUniversal
+ * @param {string} engineVersion - "legacy" o "universal"
+ * @param {string} [type] - tipo legacy (requerido si engineVersion="legacy")
+ * @returns {string|null} - error message or null if valid
+ */
+function validateConditionsDual(conditions, engineVersion, type) {
+  if (engineVersion === 'universal') {
+    return validateConditionsUniversal(conditions);
+  }
+  
+  // Legacy: delegar al validador existente
+  if (engineVersion === 'legacy' || !engineVersion) {
+    if (!type) {
+      return 'type es requerido para engineVersion legacy';
+    }
+    return validateConditions(type, conditions);
+  }
+  
+  return `engineVersion desconocido: ${engineVersion}`;
+}
+
+module.exports = { 
+  validateConditions,
+  validateConditionsUniversal,
+  validateConditionsDual,
+};
