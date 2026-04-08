@@ -33,20 +33,22 @@ Evolucionar el motor de descuentos de una arquitectura de "Silos" (8 tipos rígi
 - Validación dual: `validateConditionsDual(conditions, engineVersion, type)`
 - Tests passing: 6 casos cubriendo ITEM, ORDER, combos, maxUnits, vigencia, ticketConditions
 
-### Fase 2: Endpoint Único con Detección ⏳ PENDIENTE
+### Fase 2: Endpoint Único con Detección ✅ COMPLETA
 - Un solo endpoint `/api/discounts/preview`
 - Controller detecta `engineVersion` por regla
 - Ejecuta ambos motores (legacy + universal)
 - Combina resultados (merge)
 - Soporte para reglas mixtas simultáneamente
+- CRUD de descuentos soporta reglas universales (derivación dinámica de layer)
 
-### Fase 3: Frontend Modal Híbrido ⏳ PENDIENTE
-- Un solo modal en `/discounts`
+### Fase 3: Frontend Modal Híbrido ✅ COMPLETA
+- Un solo modal en `/discounts` (`DiscountFormModal.jsx`)
 - Detecta `engineVersion` de la regla
-- Renderiza UI legacy (tipos) o UI universal (toggles) según corresponda
+- Renderiza UI legacy (tipos) o UI universal (toggles/RuleBuilder) según corresponda
+- Soporte para creación de reglas universales con Rule Builder
 
-### Fase 4: Deprecación y Cleanup ⏳ PENDIENTE
-- Migrar todas las reglas restantes a `universal`
+### Fase 4: Deprecación y Cleanup 🚧 EN PROCESO
+- Migrar todas las reglas restantes a `universal` (Bloqueado en Task 4.1)
 - Deprecar campos `conditions`, `type`, `layer`
 - Eliminar evaluadores legacy
 - Limpieza de código
@@ -132,17 +134,18 @@ Fase 1: Campo engineVersion + Motor Universal
 - [x] 1.5 Tests pasando (6 casos)
 - [x] 1.6 Documentación JSDoc
 
-Fase 2: Endpoint Único con Detección (PENDIENTE)
-- [ ] 2.1 Modificar controller para detectar engineVersion
-- [ ] 2.2 Ejecutar ambos motores
-- [ ] 2.3 Merge de resultados
+Fase 2: Endpoint Único con Detección ✅ COMPLETA
+- [x] 2.1 Modificar controller para detectar engineVersion
+- [x] 2.2 Ejecutar ambos motores
+- [x] 2.3 Merge de resultados
+- [x] 2.4 CRUD: Soporte para reglas universales (create/update)
 
-Fase 3: Frontend Modal Híbrido (PENDIENTE)
-- [ ] 3.1 Detectar engineVersion en modal
-- [ ] 3.2 UI adaptativa legacy/universal
+Fase 3: Frontend Modal Híbrido ✅ COMPLETA
+- [x] 3.1 Detectar engineVersion en modal
+- [x] 3.2 UI adaptativa legacy/universal (UniversalRuleBuilder.jsx)
 
-Fase 4: Cleanup (PENDIENTE)
-- [ ] 4.1 Migrar reglas restantes
+Fase 4: Cleanup 🚧 EN PROCESO
+- [/] 4.1 Migrar reglas restantes (Script `scripts/migrate-discount-rules.js` creado pero fallando)
 - [ ] 4.2 Deprecar campos legacy
 - [ ] 4.3 Eliminar código viejo
 ```
@@ -268,5 +271,21 @@ Versión mínima funcional:
 
 ---
 
-*Última actualización: 2 de Abril 2026*
-*Estado: Fases 0 y 1 completadas - Listo para Fase 2*
+## 11. Estado Actual y Tarea Incompleta (Handover Crítico)
+
+### El Bloqueo: Task 4.1 (Migración Masiva)
+Estábamos intentando validar el script `scripts/migrate-discount-rules.js` para migrar las reglas legacy existentes al nuevo engine universal.
+- **Qué se hizo**: El script está 100% programado con la lógica de mapeo para los 8 tipos de descuento.
+- **Problema**: El dry-run del script falla con un error de Prisma: `AND?: DiscountRuleWhereInput[] | undefined`.
+- **Ubicación del error**: `migrate-discount-rules.js:158:23`.
+- **Causa probable**: El cliente de Prisma no está reconociendo correctamente el filtro sobre `engineVersion: 'legacy'`. Puede requerir un `npx prisma generate` o hay un mismatch estructural en el objeto `where` del script.
+
+### Siguientes Pasos Inmediatos para la próxima IA:
+1. Arreglar el query de Prisma en `scripts/migrate-discount-rules.js`.
+2. Ejecutar la migración con el flag `--execute` tras verificar el dry-run.
+3. Avanzar con F4.2 (Schema cleanup) y F4.3 (Borrado de evaluadores legacy).
+
+---
+
+*Última actualización: 7 de Abril 2026*
+*Estado: Fases 0, 1, 2 y 3 completadas — Bloqueado en inicio de Fase 4 (Migración)*

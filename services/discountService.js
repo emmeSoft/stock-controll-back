@@ -12,13 +12,85 @@
 
 const prisma              = require('../db/database.prisma.js');
 const { validateConditions, getLayer, DEFAULT_PRIORITIES, runPipeline } = require('./discountEngine');
+const { runUniversalPipeline } = require('./discountEngine/universal');
+const { validateConditionsDual } = require('./discountEngine/validators');
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────
+// Engine Routing Helpers (Fase 2 — Dual Engine)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Separa reglas activas en dos listas según su engineVersion.
+ * Las reglas sin engineVersion o con engineVersion=null caen como legacy
+ * para garantizar backward-compatibility (AXIOM-3).
+ *
+ * @param {Object[]} rules — reglas activas de la tienda
+ * @returns {{ legacyRules: Object[], universalRules: Object[] }}
+ */
+function splitRulesByEngine(rules) {
+  const legacyRules = [];
+  const universalRules = [];
+
+  for (const rule of rules) {
+    if (rule.engineVersion === 'universal') {
+      universalRules.push(rule);
+    } else {
+      // null, undefined, 'legacy' → motor legacy (backward-compatible)
+      legacyRules.push(rule);
+    }
+  }
+
+  return { legacyRules, universalRules };
+}
+
+/**
+ * Combina los resultados de ambos motores en una respuesta unificada.
+ * Contrato backward-compatible: los campos top-level no cambian de nombre/tipo.
+ *
+ * @param {Object} legacyResult  — resultado de runPipeline (puede ser vacío)
+ * @param {Object} universalResult — resultado de runUniversalPipeline (puede ser vacío)
+ * @param {number} originalTotal — subtotal calculado desde los items del carrito
+ * @returns {Object} respuesta unificada
+ */
+function mergeEngineResults(legacyResult, universalResult, originalTotal) {
+  const legacyDiscountTotal   = legacyResult?.discountTotal   ?? 0;
+  const universalDiscountTotal = universalResult?.discountTotal ?? 0;
+  const discountTotal = legacyDiscountTotal + universalDiscountTotal;
+  const finalTotal = Math.max(originalTotal - discountTotal, 0.01);
+
+  // Etiquetar cada applied discount con su motor de origen
+  const legacyApplied = (legacyResult?.appliedDiscounts ?? []).map(d => ({
+    ...d,
+    engine: 'legacy',
+  }));
+  const universalApplied = (universalResult?.appliedDiscounts ?? []).map(d => ({
+    ...d,
+    engine: 'universal',
+  }));
+
+  return {
+    originalTotal:       parseFloat(originalTotal.toFixed(2)),
+    discountTotal:       parseFloat(discountTotal.toFixed(2)),
+    finalTotal:          parseFloat(finalTotal.toFixed(2)),
+    appliedDiscounts:    [...legacyApplied, ...universalApplied],
+    conditionalDiscounts: [
+      ...(legacyResult?.conditionalDiscounts   ?? []),
+      ...(universalResult?.conditionalDiscounts ?? []),
+    ],
+    warnings: [
+      ...(legacyResult?.warnings   ?? []),
+      ...(universalResult?.warnings ?? []),
+    ],
+  };
+}
+
 /**
  * Extrae solo los campos permitidos del body para crear/editar una regla.
+ * Acepta tanto el formato legacy como el universal.
  * Nunca acepta `layer`, `usedUnits`, `createdBy` del cliente.
  */
 function sanitizeRuleInput(body) {
@@ -27,6 +99,8 @@ function sanitizeRuleInput(body) {
     type, percentage,
     startsAt, endsAt,
     conditions,
+    conditionsUniversal,
+    engineVersion,
     priority,
     isCombinable,
     combinesWith,
@@ -34,10 +108,13 @@ function sanitizeRuleInput(body) {
   } = body;
   return {
     name, description,
-    type, percentage,
-    startsAt: startsAt ? new Date(startsAt) : null,
-    endsAt:   endsAt   ? new Date(endsAt)   : null,
-    conditions,
+    type:        type ?? null,
+    percentage,
+    startsAt:    startsAt ? new Date(startsAt) : null,
+    endsAt:      endsAt   ? new Date(endsAt)   : null,
+    conditions:  conditions   ?? null,
+    conditionsUniversal: conditionsUniversal ?? null,
+    engineVersion: engineVersion ?? 'legacy',
     priority:       priority       ?? DEFAULT_PRIORITIES[type] ?? 0,
     isCombinable:   isCombinable   ?? true,
     combinesWith:   combinesWith   ?? [],
@@ -47,18 +124,32 @@ function sanitizeRuleInput(body) {
 
 /**
  * Valida un body de regla y lanza si hay errores.
+ * Soporta tanto el formato legacy como el universal (SC-2.4).
  * @throws {Error}
  */
-function validateRuleBody({ type, percentage, conditions }) {
-  if (!type) throw new Error('El campo `type` es obligatorio.');
+function validateRuleBody({ type, percentage, conditions, conditionsUniversal, engineVersion }) {
   if (typeof percentage !== 'number' || percentage <= 0 || percentage >= 100) {
     throw new Error('`percentage` debe ser un número entre 0.01 y 99.99.');
   }
-  if (!conditions || typeof conditions !== 'object') {
-    throw new Error('`conditions` debe ser un objeto.');
+
+  const version = engineVersion ?? 'legacy';
+
+  if (version === 'universal') {
+    // Reglas universales: conditionsUniversal requerido, type opcional
+    if (!conditionsUniversal || typeof conditionsUniversal !== 'object') {
+      throw new Error('`conditionsUniversal` debe ser un objeto para reglas universales.');
+    }
+    const condError = validateConditionsDual(conditionsUniversal, 'universal');
+    if (condError) throw new Error(`conditionsUniversal inválidas: ${condError}`);
+  } else {
+    // Reglas legacy: type y conditions requeridos
+    if (!type) throw new Error('El campo `type` es obligatorio para reglas legacy.');
+    if (!conditions || typeof conditions !== 'object') {
+      throw new Error('`conditions` debe ser un objeto para reglas legacy.');
+    }
+    const condError = validateConditionsDual(conditions, 'legacy', type);
+    if (condError) throw new Error(`Conditions inválidas para tipo ${type}: ${condError}`);
   }
-  const condError = validateConditions(type, conditions);
-  if (condError) throw new Error(`Conditions inválidas para tipo ${type}: ${condError}`);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -103,13 +194,23 @@ const create = async (body, user) => {
   validateRuleBody(body);
 
   const input = sanitizeRuleInput(body);
-  const layer = getLayer(input.type); // AXIOMA 1: siempre derivado
+
+  // AXIOM-4: layer derivado del tipo de regla, nunca del request
+  // Para universales: se infiere del target (con target → ITEM, sin target → ORDER)
+  let layer;
+  if (input.engineVersion === 'universal') {
+    const target = input.conditionsUniversal?.target;
+    const hasTarget = target && (target.productIds?.length > 0 || target.categoryIds?.length > 0);
+    layer = hasTarget ? 'ITEM' : 'ORDER';
+  } else {
+    layer = getLayer(input.type); // legacy: del type
+  }
 
   return prisma.discountRule.create({
     data: {
       storeId,
       createdBy: user.id,
-      layer,           // nunca del cliente
+      layer,
       ...input,
     },
     include: { creator: { select: { id: true, fullName: true } } },
@@ -127,7 +228,16 @@ const update = async (id, body, user) => {
 
   validateRuleBody(body);
   const input = sanitizeRuleInput(body);
-  const layer = getLayer(input.type); // recalcular si cambió el tipo
+
+  // Mismo mecanismo de derivación de layer que en create (AXIOM-4)
+  let layer;
+  if (input.engineVersion === 'universal') {
+    const target = input.conditionsUniversal?.target;
+    const hasTarget = target && (target.productIds?.length > 0 || target.categoryIds?.length > 0);
+    layer = hasTarget ? 'ITEM' : 'ORDER';
+  } else {
+    layer = getLayer(input.type);
+  }
 
   return prisma.discountRule.update({
     where: { id },
@@ -213,14 +323,41 @@ const preview = async (body, user) => {
     select: { maxDiscountPct: true },
   });
 
-  return runPipeline({
+  // Calcular originalTotal una sola vez desde los items reales (SC-2.3)
+  const originalTotal = cartItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+
+  // ── Fase 2: Separar reglas por engineVersion (SC-2.1) ──────────
+  const allRules = await prisma.discountRule.findMany({
+    where: { storeId, isActive: true },
+  });
+  const { legacyRules, universalRules } = splitRulesByEngine(allRules);
+
+  // ── Ejecutar motor legacy (SC-2.2) ────────────────────────────
+  const legacyContext = {
     storeId,
-    prisma,
-    store:          { maxDiscountPct: store?.maxDiscountPct ?? 50 },
+    store: { maxDiscountPct: store?.maxDiscountPct ?? 50 },
     clientId:       clientId ?? null,
     paymentMethods: paymentMethods ?? [],
     items:          cartItems,
-  });
+    rules:          legacyRules,   // inyectadas directamente — no hay segundo fetch
+  };
+  const legacyResult = legacyRules.length > 0
+    ? await runPipeline(legacyContext)
+    : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
+
+  // ── Ejecutar motor universal (SC-2.2) ─────────────────────────
+  const universalContext = {
+    storeId,
+    clientId:       clientId ?? null,
+    paymentMethods: paymentMethods ?? [],
+    items:          cartItems,
+  };
+  const universalResult = universalRules.length > 0
+    ? runUniversalPipeline(universalContext, universalRules)
+    : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
+
+  // ── Merge de resultados (SC-2.3) ──────────────────────────────
+  return mergeEngineResults(legacyResult, universalResult, originalTotal);
 };
 
 module.exports = { getAll, getById, create, update, deactivate, activate, preview };
