@@ -63,7 +63,18 @@ const activate = async (req, res) => {
     const result = await discountService.activate(req.params.id, req.user);
     res.json({ message: 'Regla activada correctamente.', rule: result });
   } catch (error) {
-    const status = error.message.includes('no encontrada') ? 404 : 400;
+    const status = error.message.includes('no encontrada') ? 404 : 500;
+    res.status(status).json({ message: error.message });
+  }
+};
+
+// DELETE /api/discounts/:id — hard delete (solo ADMINISTRADOR y SISTEMA)
+const remove = async (req, res) => {
+  try {
+    const result = await discountService.remove(req.params.id, req.user);
+    res.json({ message: 'Regla eliminada físicamente.', deleted: result });
+  } catch (error) {
+    const status = error.message.includes('no encontrada') ? 404 : 500;
     res.status(status).json({ message: error.message });
   }
 };
@@ -78,4 +89,4 @@ const preview = async (req, res) => {
   }
 };
 
-module.exports = { getAll, getById, create, update, deactivate, activate, preview };
+module.exports = { getAll, getById, create, update, deactivate, activate, remove, preview };

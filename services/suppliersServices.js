@@ -25,7 +25,7 @@ const create = async (dataSuppliers, user) => {
     const response = await prisma.supplier.create({ 
         data: { 
             ...cleanData, 
-            storeId: user.storeId 
+            store: { connect: { id: user.storeId } }
         } 
     });
     return response;

@@ -58,7 +58,7 @@ const openRegister = async (data, user) => {
 
     const caja = await prisma.cashRegister.create({
         data: {
-            storeId: user.storeId,
+            store: { connect: { id: user.storeId } },
             openedByUserId: user.id,
             openingAmount: parseFloat(openingAmount),
             status: 'OPEN'

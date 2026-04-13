@@ -17,7 +17,7 @@ const createMovement = async (data, user) => {
 
     const movement = await prisma.cashMovement.create({
         data: {
-            storeId: user.storeId,
+            store: { connect: { id: user.storeId } },
             cashRegisterId: currentRegister.id,
             userId: user.id,
             type: type,

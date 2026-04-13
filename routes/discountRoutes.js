@@ -10,6 +10,7 @@
  *  PUT    /:id           → discount.update  (ENCARGADO, ADMINISTRADOR, SISTEMA)
  *  PATCH  /:id/activate  → discount.update
  *  PATCH  /:id/deactivate→ discount.delete  (ADMINISTRADOR, SISTEMA)
+ *  DELETE /:id           → discount.delete  (ADMINISTRADOR, SISTEMA) — hard delete
  * ─────────────────────────────────────────────────────────────────
  */
 
@@ -33,5 +34,8 @@ router.put('/:id', authMiddleware, requirePermission('discount.update'), ctrl.up
 // Activar/Desactivar
 router.patch('/:id/activate',   authMiddleware, requirePermission('discount.update'), ctrl.activate);
 router.patch('/:id/deactivate', authMiddleware, requirePermission('discount.delete'), ctrl.deactivate);
+
+// Eliminar físicamente — solo ADMINISTRADOR y SISTEMA
+router.delete('/:id', authMiddleware, requirePermission('discount.delete'), ctrl.remove);
 
 module.exports = router;

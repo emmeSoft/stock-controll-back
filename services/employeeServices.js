@@ -181,7 +181,7 @@ const create = async (dataEmployee, user) => {
             ...cleanData,
             password: hashedPassword, 
             mustChangePassword: true,
-            storeId: assignedStoreId,
+            store: assignedStoreId ? { connect: { id: assignedStoreId } } : undefined,
             roleId: targetRole.id
         },
         include: { rbacRole: true }

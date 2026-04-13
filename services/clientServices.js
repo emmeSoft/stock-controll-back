@@ -29,7 +29,7 @@ const create = async (dataClient, user) => {
     const response = await prisma.client.create({ 
         data: { 
             ...cleanData, 
-            storeId: user.storeId 
+            store: { connect: { id: user.storeId } }
         } 
     });
     // console.log('Client created:');

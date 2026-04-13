@@ -71,7 +71,7 @@ const create = async (dataProduct, user) => {
     if (stock > 0) {
         await prisma.stockHistory.create({
             data: {
-                storeId: user.storeId,
+                store: { connect: { id: user.storeId } },
                 productId: response.id,
                 userId: user.id || null,
                 type: 'INITIAL',
@@ -222,7 +222,7 @@ const update = async (id, dataProduct, user) => {
         const difference = cleanData.stock - existingProduct.stock;
         await prisma.stockHistory.create({
             data: {
-                storeId: existingProduct.storeId,
+                store: { connect: { id: existingProduct.storeId } },
                 productId: id,
                 userId: user.id || null,
                 type: 'MANUAL_ADJUSTMENT',

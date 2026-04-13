@@ -208,8 +208,8 @@ const create = async (body, user) => {
 
   return prisma.discountRule.create({
     data: {
-      storeId,
-      createdBy: user.id,
+      store: { connect: { id: storeId } },
+      creator: { connect: { id: user.id } },
       layer,
       ...input,
     },
@@ -259,6 +259,38 @@ const deactivate = async (id, user) => {
   return prisma.discountRule.update({
     where: { id },
     data:  { isActive: false },
+  });
+};
+
+/**
+ * Hard delete: elimina físicamente la regla de la DB.
+ * Primero elimina AppliedDiscount relacionados, luego DiscountRule.
+ * Solo disponible para roles ADMINISTRADOR y SISTEMA.
+ *
+ * @param {string} id — ID de la regla
+ * @param {object} user — usuario autenticado (debe tener storeId)
+ * @returns {object} resultado de la eliminación
+ */
+const remove = async (id, user) => {
+  const storeId = user.storeId;
+  if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
+  
+  // Verificar ownership antes de eliminar
+  await getById(id, storeId);
+
+  // Eliminar en transacción: primero AppliedDiscount, luego DiscountRule
+  return prisma.$transaction(async (tx) => {
+    // 1. Eliminar AppliedDiscount relacionados
+    await tx.appliedDiscount.deleteMany({
+      where: { discountRuleId: id },
+    });
+
+    // 2. Eliminar la DiscountRule
+    await tx.discountRule.delete({
+      where: { id },
+    });
+
+    return { id, deleted: true };
   });
 };
 
@@ -360,4 +392,4 @@ const preview = async (body, user) => {
   return mergeEngineResults(legacyResult, universalResult, originalTotal);
 };
 
-module.exports = { getAll, getById, create, update, deactivate, activate, preview };
+module.exports = { getAll, getById, create, update, deactivate, remove, activate, preview };

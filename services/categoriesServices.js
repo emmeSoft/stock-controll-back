@@ -45,7 +45,7 @@ const create = async (dataCategory, user) => {
         data: { 
             ...cleanData, 
             barcodePrefix,
-            storeId: user.storeId 
+            store: { connect: { id: user.storeId } }
         } 
     });
     return response;

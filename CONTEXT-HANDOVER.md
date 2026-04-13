@@ -287,5 +287,32 @@ Estábamos intentando validar el script `scripts/migrate-discount-rules.js` para
 
 ---
 
-*Última actualización: 7 de Abril 2026*
-*Estado: Fases 0, 1, 2 y 3 completadas — Bloqueado en inicio de Fase 4 (Migración)*
+## 📋 Sesión de Trabajo — 12 Abril 2026
+
+### Estado: COMPLETA ✅
+
+### Cambios Completados
+
+| Cambio | Estado | Notas |
+|--------|--------|-------|
+| **Fase 4 Universal Discount Rules** | ✅ COMPLETO | Migración masiva, campos legacy deprecados, código legacy eliminado |
+| **Modal descuentos: scroll interno** | ✅ COMPLETO | max-w-3xl (800px), max-height 85vh, scroll solo si overflow |
+| **Modal: opción legacy oculta** | ✅ COMPLETO | engineVersion default = 'universal', toggle ocultado |
+| **Modal: cierre con Escape/click outside** | ✅ COMPLETO | Todos los modales heredan comportamiento |
+| **Payment methods válidos** | ✅ COMPLETO | Solo Efectivo, Tarjeta, Transferencia |
+| **Tarjeta descuentos en Reportes** | ✅ COMPLETO | Agregada en Estadistics.jsx |
+| **DB Schema: descuentos** | ✅ COMPLETO | Sincronizado, campos percentage, startsAt, endsAt |
+| **Relaciones Prisma: store, creator** | ✅ COMPLETO | Arreglado en discountService.js |
+| **Botón eliminar descuento** | ✅ COMPLETO | En modal edición, con ConfirmModal |
+| **Dropdown clientes: nombres completos** | ✅ COMPLETO | firstName + lastName |
+| **Dropdown: cerrar al seleccionar** | ✅ COMPLETO | setQuery('') + setIsOpen(false) |
+| **Dropdown: keyboard navigation** | ✅ COMPLETO | Flechas + Enter + Escape, highlight visual |
+
+### Pendientes / known issues
+
+- Ninguno marcado como pendiente
+
+---
+
+*Última actualización: 12 de Abril 2026*
+*Estado: COMPLETA — Todos los cambios implementados y verificados*

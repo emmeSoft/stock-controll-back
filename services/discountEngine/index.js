@@ -1,7 +1,7 @@
 /**
  * discountEngine/index.js
  * ─────────────────────────────────────────────────────────────────
- * Entry point del Motor de Descuentos v3.
+ * Entry point del Motor Universal de Descuentos.
  * Expone únicamente la API pública del módulo.
  *
  * USO:
@@ -24,15 +24,14 @@
  *   //   discountTotal:      350,
  *   //   finalTotal:         3150,
  *   //   appliedDiscounts:   [...],
- *   //   conditionalDiscounts: [...],
- *   //   warnings:           [...],
+ *   //   items:              [...],
+ *   //   orderDiscount:      {...},
  *   // }
  * ─────────────────────────────────────────────────────────────────
  */
 
-const { runPipeline }       = require('./pipeline');
-const { validateConditions} = require('./validators');
-const { getLayer, LAYER_MAP } = require('./layerMap');
+const { runUniversalPipeline } = require('./universal');
+const { validateConditionsDual, validateConditionsUniversal, validateDiscountRule } = require('./validators');
 const {
   DEFAULT_PRIORITIES,
   ORDER_COMBINABLE_TYPES,
@@ -41,15 +40,15 @@ const {
 } = require('./constants');
 
 module.exports = {
-  // API principal
-  runPipeline,
+  // API principal — Motor Universal
+  runPipeline: runUniversalPipeline,
 
-  // Utilidades expuestas (útiles para el servicio de gestión de reglas)
-  validateConditions,
-  getLayer,
+  // Validaciones
+  validateConditionsDual,
+  validateConditionsUniversal,
+  validateDiscountRule,
 
   // Constantes expuestas (útiles para seeders y servicios)
-  LAYER_MAP,
   DEFAULT_PRIORITIES,
   ORDER_COMBINABLE_TYPES,
   GUARD_MIN_PRICE,

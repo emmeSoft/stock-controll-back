@@ -401,23 +401,18 @@ model DiscountRule {
   storeId       String
   name          String
   description   String?
+  percentage    Float          @default(0)  // Porcentaje de descuento de la regla
 
-  type          DiscountType
-  percentage    Float           // Rango válido: 0.01–99.99
+  // Fechas de vigencia (para todas las reglas)
+  startsAt     DateTime?
+  endsAt       DateTime?
 
-  startsAt      DateTime?       // null = aplica desde siempre (UTC)
-  endsAt        DateTime?       // null = aplica hasta siempre (UTC)
+  // ─── Legacy fields (DEPRECATED — usar conditionsUniversal) ───
+  // type: DEPRECATED. Nullable para backward-compat; nuevo desarrollo usa conditionsUniversal.
+  type          DiscountType?
 
-  // JSON con shape específica según el tipo. Validado en capa de servicio.
-  // QUANTITY:      { minQuantity: Int, productId?: String, categoryId?: String }
-  // CASH_PAYMENT:  { paymentMethods: String[] }
-  // CLIENT:        { clientIds?: String[], allClients?: Boolean }
-  // SPECIAL_DATE:  { recurrence?: "YEARLY" | "ONCE" }
-  // PRODUCT:       { productIds: String[] }
-  // CATEGORY:      { categoryIds: String[] }
-  // MIN_AMOUNT:    { minAmount: Float }
-  // LIMITED_STOCK: { productIds: String[], maxUnits: Int }
-  conditions    Json
+  // conditions: DEPRECATED. Migrado a conditionsUniversal.
+  conditions    Json?
 
   // ─── Universal Discount Rules ─────────────────────────────────────
   // Control por regla: "legacy" = 8 tipos rígidos, "universal" = campos composables
@@ -435,8 +430,9 @@ model DiscountRule {
 
   priority      Int             @default(0)  // Mayor valor = se evalúa primero
 
-  // Autocalculado del type — NO se acepta del request (AXIOMA 1)
-  layer         DiscountLayer
+  // layer: DEPRECATED. Derivar del target en runtime (ITEM si tiene productIds/categoryIds, ORDER si no).
+  // Mantenido en schema por backward-compatibilidad con registros existentes.
+  layer         DiscountLayer?
 
   // Combinabilidad: ITEM = competitiva (un ganador). ORDER = cooperativa (distintos suman).
   isCombinable  Boolean         @default(true)
