@@ -52,15 +52,17 @@ const {
  * @param {Date} [context.now] - Fecha actual (para tests)
  */
 function runUniversalPipeline(context, rules) {
+
   // Filtrar solo reglas con engineVersion='universal'
   const universalRules = rules.filter(r => r.engineVersion === 'universal');
-  
+
   // Si no hay reglas universales, retornar resultado vacío
   if (universalRules.length === 0) {
+
     const originalTotal = context.items.reduce((sum, item) => {
       return sum + (item.unitPrice * item.quantity);
     }, 0);
-    
+
     return {
       originalTotal,
       discountTotal: 0,
@@ -77,24 +79,24 @@ function runUniversalPipeline(context, rules) {
       orderDiscount: null,
     };
   }
-  
+
   return evaluateUniversal(context, universalRules);
 }
 
 module.exports = {
   // API principal
   runUniversalPipeline,
-  
+
   // Utilidades expuestas (para testing y debugging)
   evaluateUniversal,
-  
+
   // Funciones del calculator
   simulateMonetaryImpact,
   applyDiscount,
   calculateResidualSubtotal,
   findBestItemRule,
   findBestOrderRule,
-  
+
   // Constantes
   GUARD_MIN_PRICE,
 };

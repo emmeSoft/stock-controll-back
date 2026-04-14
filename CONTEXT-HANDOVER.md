@@ -314,5 +314,59 @@ Estábamos intentando validar el script `scripts/migrate-discount-rules.js` para
 
 ---
 
-*Última actualización: 12 de Abril 2026*
+## 7. Trabajos Realizados - 14 Abril 2026
+
+### Bug Fixes Críticos
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Error: filter undefined** | ✅ ARREGLADO | salesServices no pasaba rules al motor universal |
+| **Error: payment mismatch** | ✅ ARREGLADO | Frontend ahora envía amount para validar vs computedTotal |
+| **Error: AppliedDiscount type null** | ✅ ARREGLADO | Schema ahora permite type nullable |
+
+### Nuevas Funcionalidades
+
+| Feature | Estado | Descripción |
+|---------|--------|-------------|
+| **Modal Calcular Descuentos** | ✅ IMPLEMENTADO | Nuevo flujo: botón → modal preview → confirmar |
+
+### Detalles de Implementación
+
+#### Bug Fix 1: Error "Cannot read properties of undefined (reading 'filter')"
+- **Causa**: salesServices.js llamaba runPipeline sin pasar rules como segundo parámetro
+- **Solución**: 
+  - Modificado salesServices.js para implementar patrón dual-engine (mismo que discountService.preview)
+  - Fetch de reglas → splitRulesByEngine → ejecutar ambos motores → merge results
+
+#### Bug Fix 2: Error de validación de payment ($1307.25 vs $915.08)
+- **Causa**: Backend comparaba paymentBreakdown con finalTotal (con descuentos), frontend enviaba subtotal
+- **Solución**:
+  - Frontend ahora envía `amount: total` (subtotal sin descuentos)
+  - Backend valida ese monto contra computedSubtotal (mismos términos)
+
+#### Bug Fix 3: AppliedDiscount.type null
+- **Causa**: Prisma schema exigía type obligatorio, pero reglas universales pueden no tener DiscountType
+- **Solución**:
+  - Schema: `type DiscountType?` (nullable)
+  - Migración aplicada: 20260414152247_make_applied_discount_type_nullable
+  - Helper normalizeAppliedDiscount() en salesServices para completar datos faltantes
+
+#### Nueva Feature: Modal de Confirmación de Ventas
+- **Flujo nuevo**:
+  1. Usuario hace click en "CALCULAR DESCUENTOS"
+  2. Se abre DiscountSummaryModal con:
+     - Lista de productos (nombre, cantidad, precio, subtotal)
+     - Descuentos aplicados (nombre, monto)
+     - Subtotal / Descuento / Total a Pagar
+  3. Click en "REALIZAR VENTA"
+  4. Modal se cierra, se ejecuta la venta
+- **Archivos nuevos**:
+  - `src/components/Modals/DiscountSummaryModal.jsx` (NUEVO)
+  - `src/pages/sales/NewSale.jsx` (modificado)
+- **Backend**:
+  - mergeEngineResults ahora recibe allRules para incluir nombre del descuento
+
+---
+
+*Última actualización: 14 de Abril 2026*
 *Estado: COMPLETA — Todos los cambios implementados y verificados*

@@ -54,23 +54,31 @@ function splitRulesByEngine(rules) {
  * @param {Object} legacyResult  — resultado de runPipeline (puede ser vacío)
  * @param {Object} universalResult — resultado de runUniversalPipeline (puede ser vacío)
  * @param {number} originalTotal — subtotal calculado desde los items del carrito
+ * @param {Object[]} [allRules] — reglas originales para obtener nombres (opcional)
  * @returns {Object} respuesta unificada
  */
-function mergeEngineResults(legacyResult, universalResult, originalTotal) {
+function mergeEngineResults(legacyResult, universalResult, originalTotal, allRules = []) {
   const legacyDiscountTotal   = legacyResult?.discountTotal   ?? 0;
   const universalDiscountTotal = universalResult?.discountTotal ?? 0;
   const discountTotal = legacyDiscountTotal + universalDiscountTotal;
   const finalTotal = Math.max(originalTotal - discountTotal, 0.01);
 
-  // Etiquetar cada applied discount con su motor de origen
-  const legacyApplied = (legacyResult?.appliedDiscounts ?? []).map(d => ({
-    ...d,
-    engine: 'legacy',
-  }));
-  const universalApplied = (universalResult?.appliedDiscounts ?? []).map(d => ({
-    ...d,
-    engine: 'universal',
-  }));
+  // Crear mapa de reglas para buscar nombres
+  const ruleMap = new Map(allRules.map(r => [r.id, r]));
+
+  // Función para enriquecer aplica descuentos con nombre de regla
+  const enrichDiscount = (d) => {
+    const rule = ruleMap.get(d.ruleId);
+    return {
+      ...d,
+      name: rule?.name ?? d.name ?? d.reason ?? `Descuento ${d.ruleId?.substring(0, 8)}`,
+      engine: d.engine ?? 'unknown',
+    };
+  };
+
+  // Etiquetar cada applied discount con su motor de origen y nombre
+  const legacyApplied = (legacyResult?.appliedDiscounts ?? []).map(enrichDiscount);
+  const universalApplied = (universalResult?.appliedDiscounts ?? []).map(enrichDiscount);
 
   return {
     originalTotal:       parseFloat(originalTotal.toFixed(2)),
@@ -389,7 +397,7 @@ const preview = async (body, user) => {
     : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
   // ── Merge de resultados (SC-2.3) ──────────────────────────────
-  return mergeEngineResults(legacyResult, universalResult, originalTotal);
+  return mergeEngineResults(legacyResult, universalResult, originalTotal, allRules);
 };
 
-module.exports = { getAll, getById, create, update, deactivate, remove, activate, preview };
+module.exports = { getAll, getById, create, update, deactivate, remove, activate, preview, splitRulesByEngine, mergeEngineResults };

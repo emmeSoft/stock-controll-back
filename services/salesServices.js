@@ -12,7 +12,9 @@
 
 const prisma          = require('../db/database.prisma.js');
 const cajaServices    = require('./cajaServices');
+const discountService = require('./discountService');
 const { runPipeline } = require('./discountEngine');
+const { runUniversalPipeline } = require('./discountEngine/universal');
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers
@@ -54,14 +56,15 @@ function validatePayments(paymentBreakdown, computedTotal) {
 /**
  * Crea una venta aplicando el motor de descuentos.
  *
- * @param {object} saleData — { items, clientId?, paymentBreakdown }
+ * @param {object} saleData — { items, clientId?, paymentBreakdown, amount? }
  *   items: [{ id: productId, quantity }]
  *   paymentBreakdown: [{ method, amount }]
+ *   amount: number (opcional) - subtotal sin descuentos enviado por frontend
  *   clientId: string (opcional)
  * @param {object} user — usuario autenticado (req.user)
  */
 const create = async (saleData, user) => {
-  const { items, clientId, paymentBreakdown } = saleData;
+  const { items, clientId, paymentBreakdown, amount: frontendSubtotal } = saleData;
 
   const effectiveStoreId = user.storeId;
   if (!effectiveStoreId) {
@@ -132,17 +135,42 @@ const create = async (saleData, user) => {
     // Derivar métodos de pago del paymentBreakdown
     const paymentMethods = (paymentBreakdown ?? []).map(p => p.method);
 
-    // ── PASO 3: Ejecutar motor de descuentos ─────────────────────
-    // Se inyecta `tx` como prisma para que el motor lea reglas
-    // dentro de la misma transacción (snapshot consistente).
-    const discountResult = await runPipeline({
-      storeId:        effectiveStoreId,
-      prisma:         tx,
-      store:          { maxDiscountPct: store?.maxDiscountPct ?? 50 },
-      clientId:       clientId ?? null,
-      paymentMethods,
-      items:          cartItems,
+    // ── PASO 3: Ejecutar motor de descuentos (PATRÓN DUAL-ENGINE) ───
+    // Traer reglas de DB dentro de la tx para snapshot consistente.
+    const allRules = await tx.discountRule.findMany({
+      where: { storeId: effectiveStoreId, isActive: true },
     });
+    const { legacyRules, universalRules } = discountService.splitRulesByEngine(allRules);
+
+    // Calcular originalTotal una sola vez desde precios de DB
+    const originalTotal = cartItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+
+    // Motor legacy (retrocompatibilidad)
+    const legacyContext = {
+      storeId: effectiveStoreId,
+      store: { maxDiscountPct: store?.maxDiscountPct ?? 50 },
+      clientId: clientId ?? null,
+      paymentMethods: paymentMethods ?? [],
+      items: cartItems,
+      rules: legacyRules,
+    };
+    const legacyResult = legacyRules.length > 0
+      ? await runPipeline(legacyContext)
+      : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
+
+    // Motor universal
+    const universalContext = {
+      storeId: effectiveStoreId,
+      clientId: clientId ?? null,
+      paymentMethods: paymentMethods ?? [],
+      items: cartItems,
+    };
+    const universalResult = universalRules.length > 0
+      ? runUniversalPipeline(universalContext, universalRules)
+      : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
+
+    // Merge resultados (mismo algoritmo que discountService.preview)
+    const discountResult = discountService.mergeEngineResults(legacyResult, universalResult, originalTotal);
 
     // ── PASO 4: Manejo de LIMITED_STOCK — decremento atómico ─────
     // Se filtra aquí para decrementar SOLO los que realmente aplican.
@@ -193,8 +221,11 @@ const create = async (saleData, user) => {
       0.01
     );
 
-    // ── PASO 6: Validar pago del frontend contra total calculado ──
-    validatePayments(paymentBreakdown, computedFinalTotal);
+    // ── PASO 6: Validar pago del frontend ─────────────────────────
+    // El frontend envía el subtotal (sin descuentos) para validación.
+    // Se compara: paymentBreakdown.total vs frontendSubtotal (o computedSubtotal si no viene)
+    const totalToValidate = frontendSubtotal ?? computedSubtotal;
+    validatePayments(paymentBreakdown, totalToValidate);
 
     const paymentMethodSummary = paymentBreakdown.length > 1
       ? 'COMBINADO'
@@ -239,22 +270,70 @@ const create = async (saleData, user) => {
       });
     }
 
+    // ── Helper: Normalizar applied discount para persistencia ────────
+    // El motor universal devuelve un shape minimalista. Aquí completamos
+    // los campos que necesita AppliedDiscount (type, layer, percentage, reason)
+    // usando la DiscountRule como source of truth.
+    async function normalizeAppliedDiscount(orderId, applied) {
+      if (applied.amount <= 0) return null;
+      
+      // Buscar la regla para obtener metadata
+      const rule = await tx.discountRule.findUnique({
+        where: { id: applied.ruleId },
+        select: { 
+          id: true, 
+          type: true, 
+          layer: true, 
+          percentage: true, 
+          name: true,
+          description: true,
+          engineVersion: true
+        },
+      });
+      
+      if (!rule) {
+        console.warn(`AppliedDiscount: rule ${applied.ruleId} no encontrada, saltando`);
+        return null;
+      }
+      
+      // Derivar layer si no existe (para universales)
+      let layer = rule.layer;
+      if (!layer && rule.engineVersion === 'universal') {
+        // universales: tiene target = ITEM, sin target = ORDER
+        // esto ya debería estar en la regla, pero fallback
+        layer = applied.productId ? 'ITEM' : 'ORDER';
+      }
+      
+      // type puede ser null para universales - usar null en vez de inventar
+      const type = rule.type;
+      
+      // percentage real: usar el de la regla (puede ser diferente al aplicado si hay topes)
+      const percentage = rule.percentage;
+      
+      // reason:优先 nombre de regla, luego descripción, luego default
+      const reason = rule.name || rule.description || `Descuento ${rule.id}`;
+      
+      return {
+        orderId,
+        discountRuleId: applied.ruleId,
+        type,
+        layer,
+        percentage,
+        amount: applied.amount,
+        productId: applied.productId ?? null,
+        discountedQuantity: applied.discountedQty ?? applied.quantity ?? null,
+        reason,
+      };
+    }
+
     // ── PASO 9: Persistir descuentos aplicados (auditoría) ───────
     // AXIOMA 13: solo se persisten descuentos con amount > 0
     for (const applied of discountResult.appliedDiscounts) {
-      if (applied.amount <= 0) continue;
+      const normalized = await normalizeAppliedDiscount(order.id, applied);
+      if (!normalized) continue;
+      
       await tx.appliedDiscount.create({
-        data: {
-          orderId:           order.id,
-          discountRuleId:    applied.ruleId,
-          type:              applied.type,
-          layer:             applied.layer,
-          percentage:        applied.percentage,
-          amount:            applied.amount,
-          productId:         applied.productId ?? null,
-          discountedQuantity: applied.discountedQty ?? null,
-          reason:            applied.reason,
-        },
+        data: normalized,
       });
     }
 

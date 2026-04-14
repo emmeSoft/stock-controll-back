@@ -462,7 +462,7 @@ model AppliedDiscount {
   id                 String        @id @default(cuid())
   orderId            String
   discountRuleId     String
-  type               DiscountType
+  type               DiscountType? // Nullable para reglas universales (type puede ser null)
   layer              DiscountLayer
   percentage         Float         // Porcentaje efectivamente aplicado (post-tope)
   amount             Float         // Monto $ descontado — siempre > 0 (AXIOMA 13)
