@@ -38,7 +38,7 @@ const {
   applyDiscount,
   calculateResidualSubtotal,
   findBestItemRule,
-  findBestOrderRule,
+  resolveOrderDiscounts,
   GUARD_MIN_PRICE,
 } = require('./calculator');
 
@@ -204,17 +204,44 @@ function evaluateUniversal(context, rules) {
   };
   
   const validOrderRules = filterOrderRulesByTicketConditions(orderRules, contextWithResidual);
-  const bestOrderRule = findBestOrderRule(validOrderRules, residualSubtotal);
+  const orderDiscountResult = resolveOrderDiscounts(validOrderRules, residualSubtotal);
   
   let orderDiscountAmount = 0;
   let orderDiscountRule = null;
+  let appliedOrderDiscounts = [];
   
-  if (bestOrderRule) {
-    orderDiscountAmount = residualSubtotal * (bestOrderRule.percentage / 100);
-    orderDiscountRule = {
-      ruleId: bestOrderRule.id,
-      amount: orderDiscountAmount,
-    };
+  if (orderDiscountResult) {
+    orderDiscountAmount = orderDiscountResult.amount;
+    const mainRule = orderDiscountResult.rule;
+    
+    if (orderDiscountResult.isCombinable && orderDiscountResult.combinedRules) {
+      // Crear un appliedDiscount por cada regla combinable
+      appliedOrderDiscounts = orderDiscountResult.combinedRules.map(r => ({
+        ruleId: r.id,
+        amount: residualSubtotal * ((r.percentage ?? 0) / 100),
+        type: 'ORDER',
+      }));
+      
+      orderDiscountRule = {
+        ruleId: mainRule.id,
+        amount: orderDiscountAmount,
+        isCombinable: true,
+        combinedCount: orderDiscountResult.combinedRules.length,
+      };
+    } else {
+      // Solo una regla (no combinable)
+      orderDiscountRule = {
+        ruleId: mainRule.id,
+        amount: orderDiscountAmount,
+        isCombinable: false,
+      };
+      
+      appliedOrderDiscounts.push({
+        ruleId: mainRule.id,
+        amount: orderDiscountAmount,
+        type: 'ORDER',
+      });
+    }
   }
   
   // Paso 6: Calcular totales finales
@@ -232,12 +259,9 @@ function evaluateUniversal(context, rules) {
       type: 'ITEM',
     }));
   
-  if (orderDiscountRule) {
-    appliedDiscounts.push({
-      ruleId: orderDiscountRule.ruleId,
-      amount: orderDiscountRule.amount,
-      type: 'ORDER',
-    });
+  // Agregar descuentos ORDER (puede ser uno o varios si son combinables)
+  if (appliedOrderDiscounts.length > 0) {
+    appliedDiscounts.push(...appliedOrderDiscounts);
   }
   
   return {

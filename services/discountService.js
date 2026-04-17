@@ -72,6 +72,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
     return {
       ...d,
       name: rule?.name ?? d.name ?? d.reason ?? `Descuento ${d.ruleId?.substring(0, 8)}`,
+      percentage: rule?.percentage ?? d.percentage ?? null,
       engine: d.engine ?? 'unknown',
     };
   };

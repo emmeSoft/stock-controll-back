@@ -170,7 +170,7 @@ const create = async (saleData, user) => {
       : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
     // Merge resultados (mismo algoritmo que discountService.preview)
-    const discountResult = discountService.mergeEngineResults(legacyResult, universalResult, originalTotal);
+    const discountResult = discountService.mergeEngineResults(legacyResult, universalResult, originalTotal, allRules);
 
     // ── PASO 4: Manejo de LIMITED_STOCK — decremento atómico ─────
     // Se filtra aquí para decrementar SOLO los que realmente aplican.
@@ -361,6 +361,9 @@ const create = async (saleData, user) => {
     }
 
     // ── Respuesta ─────────────────────────────────────────────────
+    console.log('=== CREATE SALE: returning discountSummary ===');
+    console.log('discountResult.appliedDiscounts:', JSON.stringify(discountResult.appliedDiscounts, null, 2));
+    
     return {
       ...order,
       orderPayments:    paymentBreakdown,
@@ -399,6 +402,8 @@ const getAll = async (user) => {
 };
 
 const getById = async (id, user) => {
+  console.log('=== getById called for:', id);
+  
   const whereClause = user.storeId
     ? { id: { endsWith: id }, storeId: user.storeId }
     : { id: { endsWith: id } };
@@ -410,12 +415,55 @@ const getById = async (id, user) => {
       user:            true,
       orderDetails:    { include: { product: true } },
       orderPayments:   true,
-      appliedDiscounts: true,
+      appliedDiscounts: {
+        include: {
+          discountRule: true, // Traer la regla para obtener nombre y percentage
+        },
+      },
     },
   });
 
   if (!order) throw new Error(`Venta con ID ${id} no encontrada`);
-  return order;
+
+  console.log('Order found, appliedDiscounts count:', order.appliedDiscounts?.length);
+  console.log('First discountRule:', order.appliedDiscounts?.[0]?.discountRule);
+
+  // Agregar discountSummary para consistencia con create
+  // Calcular totals desde los descuentos aplicados
+  const discountTotal = (order.appliedDiscounts || []).reduce((sum, d) => sum + d.amount, 0);
+  const orderDetailsTotal = (order.orderDetails || []).reduce(
+    (sum, d) => sum + d.price * d.quantity, 0
+  );
+  const finalTotal = order.amount;
+
+  // Enriquecer appliedDiscounts para que incluyan name y percentage desde la regla
+  const enrichedDiscounts = (order.appliedDiscounts || []).map(d => {
+    // Debug: ver qué datos trae
+    console.log('AppliedDiscount:', d.id, 'discountRule:', d.discountRule?.name, 'reason:', d.reason);
+    
+    // Usar nombre de la regla, sino el reason guardado, sino default
+    const name = d.discountRule?.name || d.discountRule?.description || d.reason || `Descuento`;
+    // Usar percentage de la regla, sino el guardado
+    const percentage = d.discountRule?.percentage ?? d.percentage;
+    
+    return {
+      ...d,
+      name,
+      percentage,
+    };
+  });
+
+  return {
+    ...order,
+    discountSummary: {
+      originalTotal: parseFloat((orderDetailsTotal + discountTotal).toFixed(2)),
+      discountTotal: parseFloat(discountTotal.toFixed(2)),
+      finalTotal:    parseFloat(finalTotal.toFixed(2)),
+      applied:       enrichedDiscounts,
+      conditional:   [],
+      warnings:      [],
+    },
+  };
 };
 
 module.exports = { create, getAll, getById };

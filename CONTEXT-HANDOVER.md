@@ -368,5 +368,39 @@ Estábamos intentando validar el script `scripts/migrate-discount-rules.js` para
 
 ---
 
-*Última actualización: 14 de Abril 2026*
-*Estado: COMPLETA — Todos los cambios implementados y verificados*
+## 7. Trabajos Realizados - 15 Abril 2026
+
+### Mejoras en Modal de Descuentos
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **DiscountSummaryModal: porcentaje + nombre** | ✅ COMPLETO | Cada descuento muestra: "15% Descuento Por Cantidad -$500" |
+| **DiscountSummaryModal: descuento por producto** | ✅ COMPLETO | Descuentos ITEM aparecen debajo de su producto, ORDER en sección separada |
+| **SaleDetail: mismos datos que preview** | ✅ COMPLETO | Modal de venta exitosa ahora muestra nombre, porcentaje y monto de descuentos |
+
+### Detalles de Implementación
+
+#### Fix 1: DiscountSummaryModal - porcentaje y nombre
+- **Problema**: Solo mostraba nombre genérico
+- **Solución**:
+  - Backend: `enrichDiscount` en `discountService.js` ahora incluye `percentage`
+  - Frontend: badge de porcentaje adelante del nombre, descuento debajo de producto
+
+#### Fix 2: SaleDetail - mostrar descuentos con nombre y porcentaje
+- **Problema**: Mostraba "Descuento cmo0s4fn" (ID en vez de nombre)
+- **Causa**: `mergeEngineResults` no recibía `allRules` en salesServices.js
+- **Solución**:
+  - Modificado `salesServices.js` línea 173: ahora pasa `allRules` al merge
+  - `getById` también enriquecido para traer `discountRule` con include
+  - Frontend: mismo patrón que DiscountSummaryModal
+
+### Archivos Modificados
+- `stock-controll-back/services/discountService.js` — enrichDiscount agrega percentage
+- `stock-controll-back/services/salesServices.js` — mergeEngineResults recibe allRules, getById incluye discountRule
+- `stock-controll/src/components/Modals/DiscountSummaryModal.jsx` — descuentos por producto + porcentaje
+- `stock-controll/src/pages/sales/SaleDetail.jsx` — mismo formato que DiscountSummaryModal
+
+---
+
+*Última actualización: 15 de Abril 2026*
+*Estado: COMPLETA — Modal de descuentos mejorado, SaleDetail muestra detalle de descuentos*

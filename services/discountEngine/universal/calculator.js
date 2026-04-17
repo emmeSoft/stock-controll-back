@@ -127,28 +127,95 @@ function findBestItemRule(itemRules, item) {
 }
 
 /**
- * Encuentra la mejor regla ORDER para el subtotal residual.
+ * Resuelve descuentos ORDER considerando isCombinable.
+ * - Los combinables (isCombinable !== false) se suman
+ * - Los no combinables (isCombinable === false) compiten entre sí
+ * - Se elige el que mayor impacto tiene (combinables sumados vs mejor no combinable)
+ * 
  * @param {Object[]} orderRules - Reglas ORDER_LEVEL
  * @param {number} residualSubtotal - Subtotal después de descuentos ITEM
- * @returns {Object|null} La mejor regla o null
+ * @returns {Object|null} { rule, percentage, amount }
  */
-function findBestOrderRule(orderRules, residualSubtotal) {
+function resolveOrderDiscounts(orderRules, residualSubtotal) {
   if (orderRules.length === 0) return null;
   
-  let bestRule = null;
-  let bestImpact = 0;
+  // Por compatibilidad hacia atrás: si no existe isCombinable, asumir true
+  const combinable = orderRules.filter(r => r.isCombinable !== false);
+  const nonCombinable = orderRules.filter(r => r.isCombinable === false);
   
-  for (const rule of orderRules) {
-    const percentage = rule.percentage ?? 0;
-    const impact = residualSubtotal * (percentage / 100);
-    
-    if (impact > bestImpact) {
-      bestImpact = impact;
-      bestRule = rule;
-    }
+  // Los combinables se suman
+  let totalCombinablePct = 0;
+  let combinableRule = null;
+  
+  if (combinable.length > 0) {
+    totalCombinablePct = combinable.reduce((sum, r) => sum + (r.percentage ?? 0), 0);
+    combinableRule = combinable[0]; // Usar el primero como referencia (todos tienen mismo objetivo)
   }
   
-  return bestRule;
+  // Los no combinables compiten entre sí
+  let bestNonCombinable = null;
+  let bestNonCombinablePct = 0;
+  
+  if (nonCombinable.length > 0) {
+    bestNonCombinable = nonCombinable.reduce((best, r) => {
+      const pct = r.percentage ?? 0;
+      return pct > (best?.percentage ?? 0) ? r : best;
+    }, null);
+    bestNonCombinablePct = bestNonCombinable.percentage ?? 0;
+  }
+  
+  // Si no hay no combinables, devolver combinables
+  if (!bestNonCombinable) {
+    if (!combinableRule) return null;
+    return {
+      rule: combinableRule,
+      percentage: totalCombinablePct,
+      amount: residualSubtotal * (totalCombinablePct / 100),
+      isCombinable: true,
+      combinedRules: combinable,
+    };
+  }
+  
+  // Si no hay combinables, devolver mejor no combinable
+  if (!combinableRule) {
+    return {
+      rule: bestNonCombinable,
+      percentage: bestNonCombinablePct,
+      amount: residualSubtotal * (bestNonCombinablePct / 100),
+      isCombinable: false,
+      combinedRules: null,
+    };
+  }
+  
+  // Elegir el que mayor impacto tiene
+  const combinableImpact = residualSubtotal * (totalCombinablePct / 100);
+  const nonCombinableImpact = residualSubtotal * (bestNonCombinablePct / 100);
+  
+  if (combinableImpact >= nonCombinableImpact) {
+    return {
+      rule: combinableRule,
+      percentage: totalCombinablePct,
+      amount: combinableImpact,
+      isCombinable: true,
+      combinedRules: combinable,
+    };
+  } else {
+    return {
+      rule: bestNonCombinable,
+      percentage: bestNonCombinablePct,
+      amount: nonCombinableImpact,
+      isCombinable: false,
+      combinedRules: null,
+    };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Backward compatibility: wrapper que usa resolveOrderDiscounts
+// ─────────────────────────────────────────────────────────────────
+function findBestOrderRule(orderRules, residualSubtotal) {
+  const result = resolveOrderDiscounts(orderRules, residualSubtotal);
+  return result?.rule ?? null;
 }
 
 module.exports = {
@@ -156,6 +223,7 @@ module.exports = {
   applyDiscount,
   calculateResidualSubtotal,
   findBestItemRule,
-  findBestOrderRule,
+  findBestOrderRule, // Mantener para backward compatibility
+  resolveOrderDiscounts,
   GUARD_MIN_PRICE,
 };
