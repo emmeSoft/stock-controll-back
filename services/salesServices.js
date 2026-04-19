@@ -56,10 +56,14 @@ function validatePayments(paymentBreakdown, computedTotal) {
 /**
  * Crea una venta aplicando el motor de descuentos.
  *
- * @param {object} saleData — { items, clientId?, paymentBreakdown, amount? }
+ * @param {object} saleData — { items, clientId?, paymentBreakdown, amount }
  *   items: [{ id: productId, quantity }]
  *   paymentBreakdown: [{ method, amount }]
- *   amount: number (opcional) - subtotal sin descuentos enviado por frontend
+ *   amount: number (REQUERIDO) — subtotal SIN descuentos (precio base × cantidad).
+ *                               El backend lo compara contra su propio cálculo desde DB
+ *                               para detectar desincronización de pantalla (ej: precios
+ *                               cambiaron mientras el vendedor armaba el carrito).
+ *                               NUNCA se usa para calcular descuentos ni el total a cobrar.
  *   clientId: string (opcional)
  * @param {object} user — usuario autenticado (req.user)
  */
@@ -134,6 +138,29 @@ const create = async (saleData, user) => {
 
     // Derivar métodos de pago del paymentBreakdown
     const paymentMethods = (paymentBreakdown ?? []).map(p => p.method);
+
+    // ── PASO 2.5: Validar integridad de precios base (Anti-Desincronización) ──
+    // El frontend envía `amount` = subtotal SIN descuentos (lo que ve el vendedor/comprador).
+    // El backend recalcula ese mismo subtotal desde DB y los compara ANTES de cualquier
+    // cálculo de descuentos. Si difieren más del 0.1%, la sesión está desactualizada.
+    //
+    // SEGURIDAD: este valor NUNCA se usa para calcular descuentos ni el total a cobrar.
+    // Su único propósito es detectar desincronización de pantalla.
+    if (frontendSubtotal === undefined || frontendSubtotal === null) {
+      throw new Error('El campo `amount` (subtotal sin descuentos) es obligatorio para registrar una venta.');
+    }
+    const backendBaseSubtotal = cartItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+    const priceIntegrityTolerance = Math.max(0.01, backendBaseSubtotal * 0.001);
+    const priceIntegrityDiff = Math.abs(Number(frontendSubtotal) - backendBaseSubtotal);
+    if (priceIntegrityDiff > priceIntegrityTolerance) {
+      throw new Error(
+        `Desincronización de precios detectada: el valor base en pantalla ` +
+        `($${Number(frontendSubtotal).toFixed(2)}) no coincide con los precios ` +
+        `actuales del sistema ($${backendBaseSubtotal.toFixed(2)}). ` +
+        `Diferencia: $${priceIntegrityDiff.toFixed(2)} (tolerancia: $${priceIntegrityTolerance.toFixed(2)}). ` +
+        `Por favor, recargá el carrito e intentá de nuevo.`
+      );
+    }
 
     // ── PASO 3: Ejecutar motor de descuentos (PATRÓN DUAL-ENGINE) ───
     // Traer reglas de DB dentro de la tx para snapshot consistente.
@@ -221,11 +248,14 @@ const create = async (saleData, user) => {
       0.01
     );
 
-    // ── PASO 6: Validar pago del frontend ─────────────────────────
-    // El frontend envía el subtotal (sin descuentos) para validación.
-    // Se compara: paymentBreakdown.total vs frontendSubtotal (o computedSubtotal si no viene)
-    const totalToValidate = frontendSubtotal ?? computedSubtotal;
-    validatePayments(paymentBreakdown, totalToValidate);
+    // ── PASO 6: Validar pago ───────────────────────────────────────
+    // SEGURIDAD (CRIT-006): Tal como solicitaste, la validación de la plata 
+    // recibida se hace contra el valor SIN DESCUENTOS (backendBaseSubtotal).
+    // Esto es porque el frontend no calcula descuentos y el vendedor cobra
+    // en base al precio original. El motor de descuentos aplicará la rebaja
+    // internamente sobre la orden, pero validamos que el ingreso coincida con
+    // lo que el sistema espera cobrar originalmente.
+    validatePayments(paymentBreakdown, backendBaseSubtotal);
 
     const paymentMethodSummary = paymentBreakdown.length > 1
       ? 'COMBINADO'

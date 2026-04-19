@@ -368,7 +368,86 @@ Estábamos intentando validar el script `scripts/migrate-discount-rules.js` para
 
 ---
 
-## 7. Trabajos Realizados - 15 Abril 2026
+## 8. Trabajos Realizados - 16 Abril 2026
+
+### 8.1 Campo "Combinable" en Modal de Descuentos
+- Agregado dropdown "Combinable" / "No combinable" en DiscountFormModal.jsx
+- Backend: schema ya tenía campo isCombinable
+- Motor: calculator.js ahora respeta isCombinable para sumar descuentos combinables
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Dropdown isCombinable** | ✅ COMPLETO | En modal de creación/edición de descuentos |
+| **Motor combina descuentos** | ✅ COMPLETO | Si es combinable=true, se suma con otros |
+
+### 8.2 Botón Habilitar/Deshabilitar Descuentos
+- Botón para activar/desactivar descuentos sin eliminar
+- Modal de confirmación antes de ejecutar
+- Refresca lista después del cambio
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Botón Toggle** | ✅ COMPLETO | En modal de edición de descuento |
+| **ConfirmModal** | ✅ COMPLETO | Solicita confirmación antes de cambiar estado |
+| **Refresh automático** | ✅ COMPLETO | Recarga lista después de habilitar/deshabilitar |
+
+### 8.3 Ticket de Descuentos Mejorado
+- Formato reorganizado y más claro
+- Porcentaje + Nombre + Monto por producto
+- Descuentos globales al final
+- "USTED AHORRÓ" personalizado con nombre del cliente
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Formato visual** | ✅ COMPLETO | En DiscountSummaryModal y SaleDetail |
+| **Personalizado** | ✅ COMPLETO | Muestra nombre del cliente ("Juan" o "Usted") |
+| **Subtotal parcial** | ✅ COMPLETO | Muestra después de descuentos por producto |
+
+### 8.4 Fix Tickets Inmutables
+- Problema: Los tickets mostraban nombres actuales de descuentos en vez de los originales
+- Causa: JOIN dinámico a DiscountRule al consultar
+- Solución: Quitar include de discountRule, usar campo `reason` guardado
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Tickets inmutables para descuentos** | ✅ COMPLETO | cajaServices.js ya no hace JOIN a DiscountRule |
+
+### Detalles de Implementación
+
+#### Fix 1: isCombinable en Modal
+- **Frontend**: DiscountFormModal.jsx - dropdown con opciones "Combinable" / "No combinable"
+- **Backend**: discountService.js - enrichDiscount incluye percentage
+- **Motor**: calculator.js - nueva función resolveOrderDiscounts que suma combinables
+
+#### Fix 2: Botón Toggle
+- **Frontend**: DiscountFormModal.jsx + DiscountsMainPage.jsx - estados handlers, ConfirmModal
+- **Backend**: activateDiscount/deactivateDiscount endpoints
+
+#### Fix 3: Formato de Ticket
+- **Frontend**: DiscountSummaryModal.jsx y SaleDetail.jsx reformateados
+- Estructura: Cliente → Productos con descuentos → Subtotal → Globales → Métodos → Total
+- Nueva sección "USTED AHORRÓ" aparece al final
+
+#### Fix 4: Tickets Inmutables
+- **Archivo**: stock-controll-back/services/cajaServices.js
+- Cambio: `appliedDiscounts: { include: { discountRule: true } }` → `appliedDiscounts: true`
+- Importante: Esto NO afecta productos ni clientes (queda para futura iteración)
+
+### Archivos Modificados
+- **stock-controll (Frontend)**:
+  - `src/components/Discounts/DiscountFormModal.jsx`
+  - `src/pages/Discounts/DiscountsMainPage.jsx`
+  - `src/components/Modals/DiscountSummaryModal.jsx`
+  - `src/pages/sales/SaleDetail.jsx`
+- **stock-controll-back (Backend)**:
+  - `services/discountEngine/universal/calculator.js`
+  - `services/discountService.js`
+  - `services/cajaServices.js`
+
+---
+
+*Última actualización: 16 de Abril 2026*
+*Estado: Funcionalidades de descuentos completadas*
 
 ### Mejoras en Modal de Descuentos
 

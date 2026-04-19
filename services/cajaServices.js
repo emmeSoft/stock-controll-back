@@ -202,7 +202,8 @@ const getGlobalHistory = async (user, query = {}) => {
             orderDetails: {
                 include: { product: true }
             },
-            orderPayments: true
+            orderPayments: true,
+            appliedDiscounts: true
         }
     });
 
