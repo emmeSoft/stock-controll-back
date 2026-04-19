@@ -8,16 +8,21 @@ const app = express();
 
 app.use(cookieParser());
 
+// Configuración de Orígenes Permitidos
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',') 
+  : ["http://localhost:5173", "http://localhost:5174"];
+
 // Middlewares de Seguridad
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // unsafe-inline es a veces necesario en dev
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
       fontSrc: ["'self'", "fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", "http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]
+      imgSrc: ["'self'", "data:", "blob:", "res.cloudinary.com"],
+      connectSrc: ["'self'", ...allowedOrigins]
     }
   }
 })); // Protección de cabeceras HTTP y CSP
@@ -65,7 +70,15 @@ const sellerPerformanceRoutes = require('./routes/sellerPerformanceRoutes');
 const discountRoutes = require('./routes/discountRoutes');
 
 app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:5174"],
+  origin: function (origin, callback) {
+    // Permitir peticiones sin origen (como apps móviles o curl) 
+    // o si el origen está en la lista blanca
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por la política de CORS de la aplicación'));
+    }
+  },
   credentials: true
 }));
 

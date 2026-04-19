@@ -427,7 +427,7 @@ const preview = async (body, user) => {
     : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
   // ── Merge de resultados (SC-2.3) ──────────────────────────────
-  return mergeEngineResults(legacyResult, universalResult, originalTotal, allRules);
+  return mergeEngineResults(legacyResult, universalResult, originalTotal, allRules, store?.maxDiscountPct ?? 80);
 };
 
 module.exports = { getAll, getById, create, update, deactivate, remove, activate, preview, splitRulesByEngine, mergeEngineResults };

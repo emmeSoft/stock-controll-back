@@ -481,5 +481,39 @@ Estábamos intentando validar el script `scripts/migrate-discount-rules.js` para
 
 ---
 
-*Última actualización: 15 de Abril 2026*
-*Estado: COMPLETA — Modal de descuentos mejorado, SaleDetail muestra detalle de descuentos*
+## 9. Auditoría de Seguridad y Hardening — 18 Abril 2026
+
+### Estado: COMPLETA ✅
+
+Se realizó un ciclo completo de auditoría de seguridad (Security Audit 2026-04-18) para blindar el sistema contra IDOR, elevación de privilegios no autorizada y ataques de inyección/spoofing en archivos.
+
+### Cambios Completados
+
+| Vulnerabilidad / Feature | Estado | Descripción |
+| :--- | :--- | :--- |
+| **IDOR en Imágenes (HIGH-002)** | ✅ RESUELTO | Validación de propiedad (storeId) en `imageController.js`. Reglas: SISTEMA (Global), ADMIN (Tienda), VENDEDOR (Solo avatar propio). |
+| **Sudo RBAC Check (HIGH-004)** | ✅ RESUELTO | `verifySudo` ahora valida que el rol sea ADMIN o SISTEMA ANTES de autenticar contraseña. |
+| **Tope Descuento (MED-002)** | ✅ RESUELTO | `maxDiscountPct` (default 80%) integrado en el merge de motores. Clipeo automático (cap) y advertencias en el creador. |
+| **Seguridad de Uploads (MED-003)** | ✅ BASTIONADO | Doble validación en `upload.js`: MimeType + Extensión consistente (Anti-spoofing). |
+| **CORS Policy (MED-004)** | ✅ DINÁMICO | Orígenes movidos a `.env` (`ALLOWED_ORIGINS`). Helmet y CORS configurados dinámicamente. |
+| **Limpieza de Logs (MED-001)** | ✅ LIMPÌO | Eliminados logs con datos financieros sensibles en `salesServices`, `clientServices` y `categoriesServices`. |
+
+### Detalles de Implementación
+
+#### Fix 1: Blindaje IDOR en Imágenes
+- **Cambio**: Inyectada la función `checkEntityOwnership` en los métodos de `imageController.js`.
+- **Impacto**: Protege Productos, Categorías, Usuarios y Tiendas de manipulaciones cruzadas por ID.
+
+#### Fix 2: Max Discount Cap Universal
+- **Backend**: `discountService.mergeEngineResults` clipea el subtotal final usando el `maxDiscountPct` configurado en la tienda.
+- **Configuración**: `storesServices.js` solo permite modificar este valor a usuarios con rol `SISTEMA`.
+- **Frontend**: Nuevo campo condicional en `Stores.jsx` para gestionar el tope.
+
+#### Fix 3: CORS y CSP Dinámicos
+- **Archivo**: `index.js` consume `ALLOWED_ORIGINS` desde el entorno.
+- **Helmet**: Política `connectSrc` y `imgSrc` (Cloudinary) relajada solo para los dominios de confianza.
+
+---
+
+*Última actualización: 18 de Abril 2026*
+*Estado: Auditoría de Seguridad finalizada. Sistema endurecido para producción.*

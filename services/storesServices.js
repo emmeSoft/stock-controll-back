@@ -79,6 +79,10 @@ const update = async (id, dataStore, user) => {
         "isActive"
     ];
 
+    if (isSistema) {
+        allowedFields.push("maxDiscountPct");
+    }
+
     const cleanData = Object.fromEntries(
         Object.entries(dataStore).filter(
             ([key, value]) => allowedFields.includes(key) && value !== undefined
