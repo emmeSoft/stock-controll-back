@@ -175,7 +175,7 @@ const create = async (saleData, user) => {
     // Motor legacy (retrocompatibilidad)
     const legacyContext = {
       storeId: effectiveStoreId,
-      store: { maxDiscountPct: store?.maxDiscountPct ?? 50 },
+      store: { maxDiscountPct: store?.maxDiscountPct ?? 80 },
       clientId: clientId ?? null,
       paymentMethods: paymentMethods ?? [],
       items: cartItems,
@@ -196,8 +196,11 @@ const create = async (saleData, user) => {
       ? runUniversalPipeline(universalContext, universalRules)
       : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
-    // Merge resultados (mismo algoritmo que discountService.preview)
-    const discountResult = discountService.mergeEngineResults(legacyResult, universalResult, originalTotal, allRules);
+    // Merge resultados — pasar maxDiscountPct para que el cap aplique a ambos motores
+    const discountResult = discountService.mergeEngineResults(
+      legacyResult, universalResult, originalTotal, allRules,
+      store?.maxDiscountPct ?? 80
+    );
 
     // ── PASO 4: Manejo de LIMITED_STOCK — decremento atómico ─────
     // Se filtra aquí para decrementar SOLO los que realmente aplican.
@@ -391,8 +394,6 @@ const create = async (saleData, user) => {
     }
 
     // ── Respuesta ─────────────────────────────────────────────────
-    console.log('=== CREATE SALE: returning discountSummary ===');
-    console.log('discountResult.appliedDiscounts:', JSON.stringify(discountResult.appliedDiscounts, null, 2));
     
     return {
       ...order,
@@ -432,7 +433,6 @@ const getAll = async (user) => {
 };
 
 const getById = async (id, user) => {
-  console.log('=== getById called for:', id);
   
   const whereClause = user.storeId
     ? { id: { endsWith: id }, storeId: user.storeId }
@@ -455,9 +455,6 @@ const getById = async (id, user) => {
 
   if (!order) throw new Error(`Venta con ID ${id} no encontrada`);
 
-  console.log('Order found, appliedDiscounts count:', order.appliedDiscounts?.length);
-  console.log('First discountRule:', order.appliedDiscounts?.[0]?.discountRule);
-
   // Agregar discountSummary para consistencia con create
   // Calcular totals desde los descuentos aplicados
   const discountTotal = (order.appliedDiscounts || []).reduce((sum, d) => sum + d.amount, 0);
@@ -468,9 +465,6 @@ const getById = async (id, user) => {
 
   // Enriquecer appliedDiscounts para que incluyan name y percentage desde la regla
   const enrichedDiscounts = (order.appliedDiscounts || []).map(d => {
-    // Debug: ver qué datos trae
-    console.log('AppliedDiscount:', d.id, 'discountRule:', d.discountRule?.name, 'reason:', d.reason);
-    
     // Usar nombre de la regla, sino el reason guardado, sino default
     const name = d.discountRule?.name || d.discountRule?.description || d.reason || `Descuento`;
     // Usar percentage de la regla, sino el guardado

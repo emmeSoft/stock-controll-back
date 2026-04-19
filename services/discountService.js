@@ -57,10 +57,15 @@ function splitRulesByEngine(rules) {
  * @param {Object[]} [allRules] — reglas originales para obtener nombres (opcional)
  * @returns {Object} respuesta unificada
  */
-function mergeEngineResults(legacyResult, universalResult, originalTotal, allRules = []) {
-  const legacyDiscountTotal   = legacyResult?.discountTotal   ?? 0;
+function mergeEngineResults(legacyResult, universalResult, originalTotal, allRules = [], maxDiscountPct = 80) {
+  const legacyDiscountTotal    = legacyResult?.discountTotal   ?? 0;
   const universalDiscountTotal = universalResult?.discountTotal ?? 0;
-  const discountTotal = legacyDiscountTotal + universalDiscountTotal;
+  const rawDiscountTotal = legacyDiscountTotal + universalDiscountTotal;
+
+  // ── Aplicar tope de descuento de la tienda ──────────────────────
+  const maxAllowedDiscount = parseFloat(((originalTotal * maxDiscountPct) / 100).toFixed(2));
+  const capApplied = rawDiscountTotal > maxAllowedDiscount;
+  const discountTotal = capApplied ? maxAllowedDiscount : rawDiscountTotal;
   const finalTotal = Math.max(originalTotal - discountTotal, 0.01);
 
   // Crear mapa de reglas para buscar nombres
@@ -78,22 +83,32 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
   };
 
   // Etiquetar cada applied discount con su motor de origen y nombre
-  const legacyApplied = (legacyResult?.appliedDiscounts ?? []).map(enrichDiscount);
+  const legacyApplied    = (legacyResult?.appliedDiscounts ?? []).map(enrichDiscount);
   const universalApplied = (universalResult?.appliedDiscounts ?? []).map(enrichDiscount);
 
+  const warnings = [
+    ...(legacyResult?.warnings   ?? []),
+    ...(universalResult?.warnings ?? []),
+  ];
+
+  if (capApplied) {
+    warnings.push(
+      `[CAP] Descuento total ($${rawDiscountTotal.toFixed(2)}) superó el tope configurado ` +
+      `de la tienda (${maxDiscountPct}%). Se aplicó el máximo permitido: $${maxAllowedDiscount.toFixed(2)}.`
+    );
+  }
+
   return {
-    originalTotal:       parseFloat(originalTotal.toFixed(2)),
-    discountTotal:       parseFloat(discountTotal.toFixed(2)),
-    finalTotal:          parseFloat(finalTotal.toFixed(2)),
+    originalTotal:        parseFloat(originalTotal.toFixed(2)),
+    discountTotal:        parseFloat(discountTotal.toFixed(2)),
+    finalTotal:           parseFloat(finalTotal.toFixed(2)),
+    capApplied,
     appliedDiscounts:    [...legacyApplied, ...universalApplied],
     conditionalDiscounts: [
       ...(legacyResult?.conditionalDiscounts   ?? []),
       ...(universalResult?.conditionalDiscounts ?? []),
     ],
-    warnings: [
-      ...(legacyResult?.warnings   ?? []),
-      ...(universalResult?.warnings ?? []),
-    ],
+    warnings,
   };
 }
 
@@ -202,6 +217,18 @@ const create = async (body, user) => {
 
   validateRuleBody(body);
 
+  // Advertencia si el porcentaje supera el tope configurado para la tienda
+  const storeConfig = await prisma.store.findUnique({
+    where:  { id: storeId },
+    select: { maxDiscountPct: true },
+  });
+  const storeMax = storeConfig?.maxDiscountPct ?? 80;
+  const pctWarning = (body.percentage > storeMax)
+    ? `⚠️ Advertencia: el porcentaje de esta regla (${body.percentage}%) supera el tope máximo ` +
+      `configurado para la tienda (${storeMax}%). La regla se guardará, pero el motor de ` +
+      `descuentos la clipeará al ${storeMax}% durante las ventas.`
+    : null;
+
   const input = sanitizeRuleInput(body);
 
   // AXIOM-4: layer derivado del tipo de regla, nunca del request
@@ -215,7 +242,7 @@ const create = async (body, user) => {
     layer = getLayer(input.type); // legacy: del type
   }
 
-  return prisma.discountRule.create({
+  const rule = await prisma.discountRule.create({
     data: {
       store: { connect: { id: storeId } },
       creator: { connect: { id: user.id } },
@@ -224,6 +251,8 @@ const create = async (body, user) => {
     },
     include: { creator: { select: { id: true, fullName: true } } },
   });
+
+  return { ...rule, warning: pctWarning };
 };
 
 /**
@@ -376,7 +405,7 @@ const preview = async (body, user) => {
   // ── Ejecutar motor legacy (SC-2.2) ────────────────────────────
   const legacyContext = {
     storeId,
-    store: { maxDiscountPct: store?.maxDiscountPct ?? 50 },
+    store: { maxDiscountPct: store?.maxDiscountPct ?? 80 },
     clientId:       clientId ?? null,
     paymentMethods: paymentMethods ?? [],
     items:          cartItems,

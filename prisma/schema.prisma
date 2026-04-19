@@ -15,7 +15,7 @@ model store {
   isActive       Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
-  maxDiscountPct Float          @default(50)  // Tope global de descuentos por tienda (%)
+  maxDiscountPct Float          @default(80)  // Tope global de descuentos por tienda (%)
   cashMovements  CashMovement[]
   cashRegisters  CashRegister[]
   stockHistories StockHistory[]

@@ -110,6 +110,13 @@ const verifySudo = async (req, res) => {
             return res.status(400).json({ message: "La contraseña es requerida." });
         }
 
+        // SEGURIDAD (HIGH-004): Verificar rol ANTES de comparar contraseña.
+        // Solo ADMINISTRADOR y SISTEMA pueden activar modo sudo.
+        const allowedSudoRoles = ['ADMINISTRADOR', 'SISTEMA'];
+        if (!allowedSudoRoles.includes(req.user.rbacRole)) {
+            return res.status(403).json({ message: "No tenés permisos para activar el modo sudo." });
+        }
+
         const adminRecord = await prisma.user.findUnique({ where: { id: adminId } });
         if (!adminRecord) {
             return res.status(404).json({ message: "Administrador no encontrado" });

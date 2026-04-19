@@ -102,7 +102,6 @@ const update = async (id, dataCategory, user) => {
         where: { id: id },
         data: cleanData
     });
-    console.log('Category updated:');
     return response;
 }
 
@@ -123,7 +122,6 @@ const setActiveStatus = async (id, isActive, user) => {
             where: { categoryId: id, storeId: user.storeId },
             data: { isActive: false }
         });
-        console.log(`All products in category ${id} have been deactivated.`);
     }
 
     return response;

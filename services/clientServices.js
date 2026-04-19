@@ -66,7 +66,6 @@ const getById = async (id, user) => {
 }
 
 const update = async (id, dataClient, user) => {
-    console.log(`Actualizando cliente con ID: ${id}`);
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const existing = await prisma.client.findFirst({ where: whereClause });
     if (!existing) throw new Error("Client not found or access denied");
@@ -139,8 +138,6 @@ const update = async (id, dataClient, user) => {
 }
 
 const setActiveStatus = async (id, isActive, user) => {
-    console.log(`${isActive ? "Habilitando" : "Deshabilitando"} cliente con ID: ${id}`);
-    
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const existing = await prisma.client.findFirst({ where: whereClause });
     if (!existing) throw new Error("Client not found or access denied");
@@ -150,7 +147,6 @@ const setActiveStatus = async (id, isActive, user) => {
         data: { isActive }
     });
 
-    return response;
     return response;
 };
 
