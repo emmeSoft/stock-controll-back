@@ -19,6 +19,22 @@ const { validateConditionsDual } = require('./discountEngine/validators');
 // Helpers
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Valida si el porcentaje de una regla supera el tope de la tienda.
+ * Lanza un Error si se excede el tope configurado (AXIOM-SECURITY).
+ */
+async function validatePercentageAgainstCap(storeId, percentage) {
+  const storeConfig = await prisma.store.findUnique({
+    where:  { id: storeId },
+    select: { maxDiscountPct: true },
+  });
+  const storeMax = storeConfig?.maxDiscountPct ?? 50;
+
+  if (percentage > storeMax) {
+    throw new Error(`Seguridad: No se puede crear un descuento (${percentage}%) que supere el tope de la tienda (${storeMax}%).`);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Engine Routing Helpers (Fase 2 — Dual Engine)
 // ─────────────────────────────────────────────────────────────────
@@ -57,16 +73,14 @@ function splitRulesByEngine(rules) {
  * @param {Object[]} [allRules] — reglas originales para obtener nombres (opcional)
  * @returns {Object} respuesta unificada
  */
-function mergeEngineResults(legacyResult, universalResult, originalTotal, allRules = [], maxDiscountPct = 80) {
+function mergeEngineResults(legacyResult, universalResult, originalTotal, allRules = [], maxDiscountPct = 80, preferredRuleIds = [], excludedRuleIds = []) {
+  console.log('🚀 [BLINDAJE] maxPct:', maxDiscountPct, 'Preferred:', preferredRuleIds, 'Excluded:', excludedRuleIds);
   const legacyDiscountTotal    = legacyResult?.discountTotal   ?? 0;
   const universalDiscountTotal = universalResult?.discountTotal ?? 0;
   const rawDiscountTotal = legacyDiscountTotal + universalDiscountTotal;
 
   // ── Aplicar tope de descuento de la tienda ──────────────────────
   const maxAllowedDiscount = parseFloat(((originalTotal * maxDiscountPct) / 100).toFixed(2));
-  const capApplied = rawDiscountTotal > maxAllowedDiscount;
-  const discountTotal = capApplied ? maxAllowedDiscount : rawDiscountTotal;
-  const finalTotal = Math.max(originalTotal - discountTotal, 0.01);
 
   // Crear mapa de reglas para buscar nombres
   const ruleMap = new Map(allRules.map(r => [r.id, r]));
@@ -78,32 +92,136 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
       ...d,
       name: rule?.name ?? d.name ?? d.reason ?? `Descuento ${d.ruleId?.substring(0, 8)}`,
       percentage: rule?.percentage ?? d.percentage ?? null,
-      engine: d.engine ?? 'unknown',
+      priority: rule?.priority ?? 0,
+      type: d.productId || d.type === 'ITEM' ? 'ITEM' : (rule?.type ?? 'ORDER'),
+      engine: d.engine ?? 'universal',
     };
   };
 
   // Etiquetar cada applied discount con su motor de origen y nombre
-  const legacyApplied    = (legacyResult?.appliedDiscounts ?? []).map(enrichDiscount);
-  const universalApplied = (universalResult?.appliedDiscounts ?? []).map(enrichDiscount);
+  const combinedApplied = [
+    ...(legacyResult?.appliedDiscounts ?? []).map(enrichDiscount),
+    ...(universalResult?.appliedDiscounts ?? []).map(enrichDiscount),
+  ];
+
+  // ── Blindaje Quirúrgico por Ignorado Estricto (Sin Recortes) ──
+  // PRIORIDAD: Preferred (User) > ITEM > ORDER > Priority (DESC) > Name (ASC)
+  const sortedApplied = [...combinedApplied].sort((a, b) => {
+    const isPrefA = preferredRuleIds.includes(a.ruleId);
+    const isPrefB = preferredRuleIds.includes(b.ruleId);
+
+    // 1. Prioridad Manual (Preferencias del usuario)
+    if (isPrefA && !isPrefB) return -1;
+    if (!isPrefA && isPrefB) return 1;
+
+    // 2. Prioridad Natural (ITEM > ORDER)
+    const layerA = a.productId || a.type === 'ITEM' ? 0 : 1;
+    const layerB = b.productId || b.type === 'ITEM' ? 0 : 1;
+    if (layerA !== layerB) return layerA - layerB; 
+
+    // 3. Valor de Prioridad (DESC)
+    const prioA = a.priority || 0;
+    const prioB = b.priority || 0;
+    if (prioA !== prioB) return prioB - prioA;
+
+    // 4. Tie-breaker (Nombre Alfabético)
+    return a.name.localeCompare(b.name);
+  });
+
+  let nominalSpaceUsed = 0; // Acumulación nominal para el blindaje (Axioma 12.3)
+  let finalApplied = [];
+  let interchangeableDiscounts = [];
+
+  for (const d of sortedApplied) {
+    // ── Axioma del Impacto Atómico ──
+    // El impacto nominal (espacio que ocupa en el cupo) debe ser INMUNE a la cascada.
+    // Si la regla tiene porcentaje, se calcula SIEMPRE sobre el total original.
+    // Si la regla es de monto fijo, se usa el monto absoluto.
+    const hasPct = d.percentage !== null && d.percentage !== undefined;
+    const nominalImpact = hasPct
+      ? parseFloat(((originalTotal * d.percentage) / 100).toFixed(2))
+      : (d.amount || 0);
+
+    const isExcluded = excludedRuleIds.includes(d.ruleId);
+    const projectedNominal = parseFloat((nominalSpaceUsed + nominalImpact).toFixed(2));
+
+    if (!isExcluded && projectedNominal <= maxAllowedDiscount + 0.01) {
+      // CABE NOMINALMENTE Y NO ESTA EXCLUIDA: Se pre-selecciona
+      finalApplied.push({ ...d, nominalImpact });
+      nominalSpaceUsed = projectedNominal;
+    } else {
+      // NO CABE O ESTA EXCLUIDA: SE IGNORA (Va a intercambiables)
+      interchangeableDiscounts.push({ ...d, nominalImpact });
+    }
+  }
+
+  // ── 3. Fase de Recalculación (Limpieza de "Fantasmas") ──
+  // Re-calculamos los montos reales sobre el subtotal que va quedando limpio
+  let recalculatedApplied = [];
+  let currentSubtotal = originalTotal;
+  let totalRecalculatedDiscount = 0;
+
+  for (const rule of finalApplied) {
+    let finalAmount = 0;
+    const isItem = rule.productId || rule.type === 'ITEM';
+
+    if (isItem) {
+      // Regla de ITEM: Mantenemos el monto calculado por el motor (es específico al producto)
+      finalAmount = rule.amount;
+    } else {
+      // Regla de ORDER: Recalculamos sobre el subtotal ACTUAL de la cascada limpia
+      finalAmount = parseFloat((currentSubtotal * ((rule.percentage ?? 0) / 100)).toFixed(2));
+    }
+
+    const updatedRule = { ...rule, amount: finalAmount };
+    recalculatedApplied.push(updatedRule);
+    
+    currentSubtotal = parseFloat((currentSubtotal - finalAmount).toFixed(2));
+    totalRecalculatedDiscount = parseFloat((totalRecalculatedDiscount + finalAmount).toFixed(2));
+  }
+
+  // Actualizamos para el retorno
+  runningDiscount = totalRecalculatedDiscount;
+  finalApplied = recalculatedApplied;
+
+  // Mensaje de blindaje
+  let capApplied = interchangeableDiscounts.length > 0;
+
+  // Sincronizar el total real final
+  const discountTotal = runningDiscount;
+  const finalTotal = Math.max(parseFloat((originalTotal - discountTotal).toFixed(2)), 0.01);
+
+  // Sincronizar array de items (PARA EL POS — SC-2.4)
+  // Cada item debe reflejar solo si su regla "sobrevivió" a la poda.
+  // Si una regla de ITEM fue descartada por el blindaje, el item vuelve a su precio original.
+  const survivorRuleIds = new Set(finalApplied.map(f => f.ruleId));
+  const survivorItems = (universalResult?.items ?? []).map(item => {
+    // Verificamos si la regla que el motor le aplicó a este item sobrevivió al blindaje nominal
+    const isSurvivor = item.appliedRule && survivorRuleIds.has(item.appliedRule.ruleId);
+    const finalItemDiscount = isSurvivor ? item.discountAmount : 0;
+
+    return {
+      ...item,
+      discountAmount: finalItemDiscount,
+      finalPrice: parseFloat((item.originalSubtotal - finalItemDiscount).toFixed(2))
+    };
+  });
 
   const warnings = [
     ...(legacyResult?.warnings   ?? []),
     ...(universalResult?.warnings ?? []),
   ];
 
-  if (capApplied) {
-    warnings.push(
-      `[CAP] Descuento total ($${rawDiscountTotal.toFixed(2)}) superó el tope configurado ` +
-      `de la tienda (${maxDiscountPct}%). Se aplicó el máximo permitido: $${maxAllowedDiscount.toFixed(2)}.`
-    );
-  }
-
   return {
-    originalTotal:        parseFloat(originalTotal.toFixed(2)),
-    discountTotal:        parseFloat(discountTotal.toFixed(2)),
-    finalTotal:           parseFloat(finalTotal.toFixed(2)),
+    originalTotal,
+    discountTotal: runningDiscount,
+    finalTotal: parseFloat((originalTotal - runningDiscount).toFixed(2)),
+    appliedDiscounts: finalApplied,
+    interchangeableDiscounts,
     capApplied,
-    appliedDiscounts:    [...legacyApplied, ...universalApplied],
+    maxDiscountPct,
+    maxDiscountAmount: maxAllowedDiscount,
+    items: survivorItems,
     conditionalDiscounts: [
       ...(legacyResult?.conditionalDiscounts   ?? []),
       ...(universalResult?.conditionalDiscounts ?? []),
@@ -217,17 +335,8 @@ const create = async (body, user) => {
 
   validateRuleBody(body);
 
-  // Advertencia si el porcentaje supera el tope configurado para la tienda
-  const storeConfig = await prisma.store.findUnique({
-    where:  { id: storeId },
-    select: { maxDiscountPct: true },
-  });
-  const storeMax = storeConfig?.maxDiscountPct ?? 80;
-  const pctWarning = (body.percentage > storeMax)
-    ? `⚠️ Advertencia: el porcentaje de esta regla (${body.percentage}%) supera el tope máximo ` +
-      `configurado para la tienda (${storeMax}%). La regla se guardará, pero el motor de ` +
-      `descuentos la clipeará al ${storeMax}% durante las ventas.`
-    : null;
+  // Validar seguridad (tope de tienda)
+  await validatePercentageAgainstCap(storeId, body.percentage);
 
   const input = sanitizeRuleInput(body);
 
@@ -252,7 +361,7 @@ const create = async (body, user) => {
     include: { creator: { select: { id: true, fullName: true } } },
   });
 
-  return { ...rule, warning: pctWarning };
+  return rule;
 };
 
 /**
@@ -277,11 +386,16 @@ const update = async (id, body, user) => {
     layer = getLayer(input.type);
   }
 
-  return prisma.discountRule.update({
+  // Validar seguridad (tope de tienda)
+  await validatePercentageAgainstCap(storeId, body.percentage);
+
+  const rule = await prisma.discountRule.update({
     where: { id },
     data:  { layer, ...input },
     include: { creator: { select: { id: true, fullName: true } } },
   });
+
+  return rule;
 };
 
 /**
@@ -358,15 +472,8 @@ const activate = async (id, user) => {
  * @param {object} body — { items, clientId?, paymentMethods? }
  * @param {object} user — usuario autenticado
  */
-const preview = async (body, user) => {
-  const storeId = user.storeId;
-  if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
-
-  const { items, clientId, paymentMethods } = body;
-
-  if (!items || items.length === 0) {
-    throw new Error('Se requiere al menos un item para el preview.');
-  }
+const preview = async (storeId, { items, clientId, paymentMethods, preferredRuleIds = [], excludedRuleIds = [] }) => {
+  if (!items || !Array.isArray(items)) throw new Error("Items son requeridos.");
 
   // Leer precios reales de DB (nunca del frontend)
   const productIds = items.map(i => i.id ?? i.productId);
@@ -396,10 +503,15 @@ const preview = async (body, user) => {
   // Calcular originalTotal una sola vez desde los items reales (SC-2.3)
   const originalTotal = cartItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
 
-  // ── Fase 2: Separar reglas por engineVersion (SC-2.1) ──────────
-  const allRules = await prisma.discountRule.findMany({
+  // ── Fase 2: Filtrado y Separación por Engine (SC-2.1) ─────────
+  const allRulesRaw = await prisma.discountRule.findMany({
     where: { storeId, isActive: true },
   });
+
+  // FILTRADO QUIRÚRGICO: Ignorar reglas que superen el tope máximo de la tienda (Axioma 12.2)
+  const storeMax = store?.maxDiscountPct ?? 50;
+  const allRules = allRulesRaw.filter(r => (r.percentage ?? 0) <= storeMax);
+
   const { legacyRules, universalRules } = splitRulesByEngine(allRules);
 
   // ── Ejecutar motor legacy (SC-2.2) ────────────────────────────
@@ -427,7 +539,15 @@ const preview = async (body, user) => {
     : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
   // ── Merge de resultados (SC-2.3) ──────────────────────────────
-  return mergeEngineResults(legacyResult, universalResult, originalTotal, allRules, store?.maxDiscountPct ?? 80);
+  return mergeEngineResults(
+    legacyResult, 
+    universalResult, 
+    originalTotal, 
+    allRules, 
+    store?.maxDiscountPct ?? 50,
+    preferredRuleIds,
+    excludedRuleIds // Pasamos las exclusiones al unificador
+  );
 };
 
 module.exports = { getAll, getById, create, update, deactivate, remove, activate, preview, splitRulesByEngine, mergeEngineResults };

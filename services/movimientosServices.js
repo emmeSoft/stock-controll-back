@@ -18,8 +18,8 @@ const createMovement = async (data, user) => {
     const movement = await prisma.cashMovement.create({
         data: {
             store: { connect: { id: user.storeId } },
-            cashRegisterId: currentRegister.id,
-            userId: user.id,
+            cashRegister: { connect: { id: currentRegister.id } },
+            user: { connect: { id: user.id } },
             type: type,
             amount: parseFloat(amount),
             description: description || null,

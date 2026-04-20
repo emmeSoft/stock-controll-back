@@ -215,12 +215,18 @@ function evaluateUniversal(context, rules) {
     const mainRule = orderDiscountResult.rule;
     
     if (orderDiscountResult.isCombinable && orderDiscountResult.combinedRules) {
-      // Crear un appliedDiscount por cada regla combinable
-      appliedOrderDiscounts = orderDiscountResult.combinedRules.map(r => ({
-        ruleId: r.id,
-        amount: residualSubtotal * ((r.percentage ?? 0) / 100),
-        type: 'ORDER',
-      }));
+      // AXIOMA: Las reglas combinables se aplican de forma iterativa (en cascada)
+      // para que el desglose refleje el impacto REAL de cada una. (SC-2.2)
+      let tempTotal = residualSubtotal;
+      appliedOrderDiscounts = orderDiscountResult.combinedRules.map(r => {
+        const impact = parseFloat((tempTotal * ((r.percentage ?? 0) / 100)).toFixed(2));
+        tempTotal -= impact;
+        return {
+          ruleId: r.id,
+          amount: impact,
+          type: 'ORDER',
+        };
+      });
       
       orderDiscountRule = {
         ruleId: mainRule.id,

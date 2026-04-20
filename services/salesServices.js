@@ -68,7 +68,14 @@ function validatePayments(paymentBreakdown, computedTotal) {
  * @param {object} user — usuario autenticado (req.user)
  */
 const create = async (saleData, user) => {
-  const { items, clientId, paymentBreakdown, amount: frontendSubtotal } = saleData;
+  const { 
+    items, 
+    clientId, 
+    paymentBreakdown, 
+    amount: frontendSubtotal,
+    preferredRuleIds = [],
+    excludedRuleIds = []
+  } = saleData;
 
   const effectiveStoreId = user.storeId;
   if (!effectiveStoreId) {
@@ -199,7 +206,9 @@ const create = async (saleData, user) => {
     // Merge resultados — pasar maxDiscountPct para que el cap aplique a ambos motores
     const discountResult = discountService.mergeEngineResults(
       legacyResult, universalResult, originalTotal, allRules,
-      store?.maxDiscountPct ?? 80
+      store?.maxDiscountPct ?? 80,
+      preferredRuleIds,
+      excludedRuleIds
     );
 
     // ── PASO 4: Manejo de LIMITED_STOCK — decremento atómico ─────
@@ -239,26 +248,49 @@ const create = async (saleData, user) => {
     }
 
     // ── PASO 5: Recalcular totales finales post-ajuste ───────────
-    // (por si se removió algún LIMITED_STOCK por cupo insuficiente)
-    const discountTotal = discountResult.appliedDiscounts.reduce(
+    // AXIOMA: el blindaje de tienda se aplica como última línea de defensa (SC-2.3)
+    // Se recalculan montos por si se removió algún LIMITED_STOCK por cupo insuficiente.
+    let discountTotal = discountResult.appliedDiscounts.reduce(
       (sum, d) => sum + d.amount, 0
     );
     const computedSubtotal = cartItems.reduce(
       (sum, i) => sum + i.unitPrice * i.quantity, 0
     );
+
+    // Re-aplicar el CAP sobre el total recalculado y ajustar desgloses
+    const maxDiscountPct = store?.maxDiscountPct ?? 80;
+    const maxAllowedDiscount = parseFloat(((computedSubtotal * maxDiscountPct) / 100).toFixed(2));
+    
+    // LOG de auditoría (Debug en Transacción)
+    console.log(`[SALE CAP DEBUG] Store: ${effectiveStoreId} | MaxPct: ${maxDiscountPct} | Subtotal: ${computedSubtotal} | CurrentDisc: ${discountTotal} | MaxAllowed: ${maxAllowedDiscount}`);
+
+    if (discountTotal > maxAllowedDiscount) {
+      const ratio = maxAllowedDiscount / discountTotal;
+      let adjustedSum = 0;
+      
+      discountResult.appliedDiscounts = discountResult.appliedDiscounts.map((d, index) => {
+        // Ajuste por diferencia de redondeo en el último elemento
+        if (index === discountResult.appliedDiscounts.length - 1) {
+          const lastAmount = parseFloat((maxAllowedDiscount - adjustedSum).toFixed(2));
+          return { ...d, amount: Math.max(lastAmount, 0) };
+        }
+        const newAmount = parseFloat((d.amount * ratio).toFixed(2));
+        adjustedSum += newAmount;
+        return { ...d, amount: newAmount };
+      }).filter(d => d.amount > 0);
+
+      discountTotal = maxAllowedDiscount;
+    }
+
     const computedFinalTotal = Math.max(
       parseFloat((computedSubtotal - discountTotal).toFixed(2)),
       0.01
     );
 
-    // ── PASO 6: Validar pago ───────────────────────────────────────
-    // SEGURIDAD (CRIT-006): Tal como solicitaste, la validación de la plata 
-    // recibida se hace contra el valor SIN DESCUENTOS (backendBaseSubtotal).
-    // Esto es porque el frontend no calcula descuentos y el vendedor cobra
-    // en base al precio original. El motor de descuentos aplicará la rebaja
-    // internamente sobre la orden, pero validamos que el ingreso coincida con
-    // lo que el sistema espera cobrar originalmente.
-    validatePayments(paymentBreakdown, backendBaseSubtotal);
+    // SEGURIDAD: Validamos que lo cobrado coincida con lo que el motor calculó 
+    // como precio final (post-cap), siguiendo el axioma de que se cobra el 
+    // precio rebajado pero blindado por el tope de la tienda.
+    validatePayments(paymentBreakdown, computedFinalTotal);
 
     const paymentMethodSummary = paymentBreakdown.length > 1
       ? 'COMBINADO'

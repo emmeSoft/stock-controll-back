@@ -82,7 +82,7 @@ const remove = async (req, res) => {
 // POST /api/discounts/preview
 const preview = async (req, res) => {
   try {
-    const result = await discountService.preview(req.body, req.user);
+    const result = await discountService.preview(req.user.storeId, req.body);
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error.message });
