@@ -517,3 +517,36 @@ Se realizó un ciclo completo de auditoría de seguridad (Security Audit 2026-04
 
 *Última actualización: 18 de Abril 2026*
 *Estado: Auditoría de Seguridad finalizada. Sistema endurecido para producción.*
+
+---
+
+## 10. Estabilización, Blindaje y Refactor de POS — 19/20 Abril 2026
+
+### Estado: COMPLETA ✅
+
+### Cambios Completados
+
+| Tema | Estado | Descripción |
+| :--- | :--- | :--- |
+| **Fuga en Tope de Tienda** | ✅ RESUELTO | Implementación del **Impacto Atómico**. El pre-cálculo de límites se hace siempre sobre el precio base crudo, evitando que los descuentos secuenciales se encojan en la cascada y evadan el tope de la tienda. |
+| **Ordenamiento Determinista** | ✅ RESUELTO | Todo el motor ordena bajo la tríada: 1. Preferencias Manuales > 2. Capa (ITEM luego ORDER) > 3. Prioridad (Impacto DESC). |
+| **UI de Modal Estabilizada** | ✅ RESUELTO | Se agregó scroll al modal, una sección colapsable (UX limpia) y se cambió la advertencia de 'Límite excedido' por la invitación a reglas 'Intercambiables'. |
+| **Sincronización Total de Pago** | ✅ RESUELTO | Frontend ahora extrae el `finalTotal` del preview y lo transfiere al `paymentBreakdown`, eliminando el desajuste de montos que rechazaba la venta, respetando la regla "Front no calcula". |
+| **Venta Final con Híbrido Manual** | ✅ RESUELTO | `NewSale.jsx` envía el `preferredRuleIds` y `excludedRuleIds` al registrar `post('/api/sales')` para que el backend coincida exactamente con las elecciones visuales del usuario. |
+| **Fix Prisma (Crashes en Caja)** | ✅ RESUELTO | Actualizada la sintaxis foránea a `connect: { id }` para `User` y `CashRegister` en aperturas de caja, cierres y movimientos manuales. Manejo de error graceful si el usuario no tiene `storeId`. |
+
+### Detalles de Implementación
+
+#### Fix 1: El Axioma de Impacto Atómico
+- **Backend (`discountService.js`)**: Se refactorizó la lógica en `mergeEngineResults`. Las reglas se iteran individualmente calculando su impacto sobre el monto original y crudo de la venta. Si la sumatoria sobrepasa el cap paramétrico, se descartan reglas enteras antes del cálculo en cascada real, logrando un 'Slot Management' matemático impecable.
+
+#### Fix 2: Sincronización POS
+- **Frontend (`NewSale.jsx`)**: Se modificó la variable original para que el total se derive de `netTotal`, alimentado estrictamente por el payload originado desde el backend vía `/preview`. Se agregó un listener de reactividad (`useEffect`) que blanquea el preview y el neto si cambian los componentes del carrito, forzando la consistencia real al vendedor.
+
+#### Fix 3: Crash de Caja y Relaciones de Prisma
+- **Servicios (`cajaServices.js`, `movimientosServices.js`)**: Adaptación de `create` y `update` para usar el patrón relacional nested de Prisma (ej. `openedByUser: { connect: { id: user.id } }`). Envoltura de checks anti-nulos que previenen 500s fatales en producción mediante un HTTP 400 amistoso informando al dev sobre la falta del selector de sucursal.
+
+---
+
+*Última actualización: 20 de Abril 2026*
+*Estado: Motor de caja, validaciones transaccionales y descuentos 100% blindados.*
