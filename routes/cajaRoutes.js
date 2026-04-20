@@ -10,6 +10,7 @@ router.get('/current', authMiddleware, requirePermission('caja.read'), cajaContr
 
 router.get('/history', authMiddleware, requirePermission('caja.read'), cajaController.getRegisterHistory);
 router.get('/history/all', authMiddleware, requirePermission('caja.read'), cajaController.getGlobalHistory);
+router.get('/registers/export', authMiddleware, requirePermission('caja.read'), cajaController.exportRegisters);
 router.get('/registers', authMiddleware, requirePermission('caja.read'), cajaController.getAllRegisters);
 
 module.exports = router;

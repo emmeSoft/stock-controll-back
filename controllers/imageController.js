@@ -75,10 +75,7 @@ const uploadImage = async (req, res) => {
     const entityId = req.body[dynamicKey];
 
     // el modelo se obtiene así: productId -> product
-    let entityModel = dynamicKey.replace("Id", "");
-    if (entityModel === "category") {
-      entityModel = "categories";
-    }
+    let entityModel = reverseTranslate(dynamicKey.replace("Id", ""));
 
     // 1.5 Verificar propiedad de la entidad antes de consumir recursos en Cloudinary (Anti-IDOR)
     // SISTEMA: acceso global irrestricto.
@@ -91,6 +88,11 @@ const uploadImage = async (req, res) => {
           if (!targetUser) return res.status(403).json({ message: 'No tenés permiso para gestionar imágenes de este usuario.' });
         } else {
           if (entityId !== req.user.id) return res.status(403).json({ message: 'Solo podés gestionar tu propio avatar.' });
+        }
+      } else if (entityModel === 'store') {
+        // Un administrador solo puede editar SU tienda
+        if (entityId !== req.user.storeId) {
+          return res.status(403).json({ message: 'No tenés permiso para gestionar imágenes de esta tienda.' });
         }
       } else {
         const ownerEntity = await prisma[entityModel].findFirst({ where: { id: entityId, storeId: req.user.storeId } });
@@ -236,7 +238,7 @@ const deleteImage = async (req, res) => {
     }
 
     // 2. Determinar a qué entidad pertenece
-    const entityKeys = ["productId", "userId", "clientId", "supplierId", "categoryId"];
+    const entityKeys = ["productId", "userId", "clientId", "supplierId", "categoryId", "storeId"];
     let entityKey = null;
     let entityId = null;
 

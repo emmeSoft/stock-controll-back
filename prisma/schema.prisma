@@ -12,6 +12,7 @@ model store {
   name           String
   address        String?
   phone          String?
+  profilePicture String?
   isActive       Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -27,6 +28,7 @@ model store {
   products       product[]
   suppliers      supplier[]
   users          user[]
+  Image          Image[]
 }
 
 model user {
@@ -222,6 +224,7 @@ model Image {
   supplierId   String?
   categoryId   String?
   productId    String?
+  storeId      String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   category     categories? @relation(fields: [categoryId], references: [id])
@@ -229,6 +232,7 @@ model Image {
   product      product?    @relation(fields: [productId], references: [id])
   supplier     supplier?   @relation(fields: [supplierId], references: [id])
   user         user?       @relation(fields: [userId], references: [id])
+  store        store?      @relation(fields: [storeId], references: [id])
 }
 
 model CashRegister {

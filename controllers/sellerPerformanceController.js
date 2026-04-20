@@ -1,20 +1,17 @@
 const prisma = require('../db/database.prisma');
+const excelService = require('../services/excelService');
 
 /**
  * GET /api/seller-performance
  * Query params: from, to (ISO date strings, optional)
  *
  * Returns per-seller sales stats filtered by the active store context.
- * - For SUPERADMIN viewing "ALL" stores: req.user.storeId is undefined → no filter.
- * - For SUPERADMIN with a specific store selected (x-store-id header): req.user.storeId is set.
- * - For ADMIN/USUARIO: req.user.storeId is always their assigned store.
  */
 exports.getSellerPerformance = async (req, res) => {
   try {
     const { from, to } = req.query;
-    const { storeId } = req.user; // set by authMiddleware (respects x-store-id for SUPERADMIN)
+    const { storeId } = req.user;
 
-    // Build date filter
     const dateFilter = {};
     if (from) dateFilter.gte = new Date(from);
     if (to)   dateFilter.lte = new Date(to);
@@ -25,7 +22,6 @@ exports.getSellerPerformance = async (req, res) => {
       ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter }),
     };
 
-    // Aggregate orders grouped by userId
     const orderAggregates = await prisma.order.groupBy({
       by: ['userId'],
       where: whereClause,
@@ -33,7 +29,6 @@ exports.getSellerPerformance = async (req, res) => {
       _sum:   { amount: true },
     });
 
-    // Total amount across all sellers for this period (to compute %)
     const totalResult = await prisma.order.aggregate({
       where: whereClause,
       _sum:   { amount: true },
@@ -42,12 +37,7 @@ exports.getSellerPerformance = async (req, res) => {
     const grandTotal = totalResult._sum.amount || 0;
     const grandCount = totalResult._count.id   || 0;
 
-    // Collect unique userIds (excluding null = system / auto)
-    const userIds = orderAggregates
-      .map(a => a.userId)
-      .filter(Boolean);
-
-    // Fetch user details
+    const userIds = orderAggregates.map(a => a.userId).filter(Boolean);
     const users = userIds.length
       ? await prisma.user.findMany({
           where: { id: { in: userIds } },
@@ -58,7 +48,6 @@ exports.getSellerPerformance = async (req, res) => {
     const usersById = {};
     users.forEach(u => { usersById[u.id] = u; });
 
-    // Build response rows
     const sellers = orderAggregates.map(agg => {
       const user = usersById[agg.userId];
       const amount = agg._sum.amount || 0;
@@ -76,7 +65,6 @@ exports.getSellerPerformance = async (req, res) => {
       };
     });
 
-    // Sort by totalAmount desc
     sellers.sort((a, b) => b.totalAmount - a.totalAmount);
 
     res.json({
@@ -90,5 +78,90 @@ exports.getSellerPerformance = async (req, res) => {
   } catch (error) {
     console.error('Error fetching seller performance:', error);
     res.status(500).json({ error: 'Failed to fetch seller performance' });
+  }
+};
+
+exports.exportPerformance = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const { storeId } = req.user;
+
+    const dateFilter = {};
+    if (from) dateFilter.gte = new Date(from);
+    if (to)   dateFilter.lte = new Date(to);
+
+    const whereClause = {
+      status: 'completed',
+      ...(storeId && { storeId }),
+      ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter }),
+    };
+
+    const orderAggregates = await prisma.order.groupBy({
+      by: ['userId'],
+      where: whereClause,
+      _count: { id: true },
+      _sum:   { amount: true },
+    });
+
+    const totalResult = await prisma.order.aggregate({
+      where: whereClause,
+      _sum:   { amount: true },
+    });
+    const grandTotal = totalResult._sum.amount || 0;
+
+    const userIds = orderAggregates.map(a => a.userId).filter(Boolean);
+    const users = userIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          include: { rbacRole: true },
+        })
+      : [];
+
+    const usersById = {};
+    users.forEach(u => { usersById[u.id] = u; });
+
+    const sellers = orderAggregates.map(agg => {
+      const user = usersById[agg.userId];
+      const amount = agg._sum.amount || 0;
+      return {
+        firstName:      user?.firstName     || 'Desconocido',
+        lastName:       user?.lastName      || '',
+        role:           user?.rbacRole?.name || 'VENDEDOR',
+        salesCount:     agg._count.id,
+        totalAmount:    amount,
+        percentage:     grandTotal > 0
+          ? Math.round((amount / grandTotal) * 10000) / 100
+          : 0,
+      };
+    });
+
+    sellers.sort((a, b) => b.totalAmount - a.totalAmount);
+
+    const columns = [
+      { header: 'Vendedor', key: 'name', width: 30 },
+      { header: 'Rol', key: 'role', width: 20 },
+      { header: 'Cant. Ventas', key: 'salesCount', width: 15 },
+      { header: 'Total Recaudado', key: 'totalAmount', width: 20 },
+      { header: '% Participación', key: 'percentage', width: 15 }
+    ];
+
+    const data = sellers.map(s => ({
+      name: `${s.firstName} ${s.lastName}`,
+      role: s.role,
+      salesCount: s.salesCount,
+      totalAmount: s.totalAmount,
+      percentage: `${s.percentage}%`
+    }));
+
+    await excelService.generateExcel({
+      res,
+      filename: `desempeño_${new Date().toISOString().split('T')[0]}.xlsx`,
+      worksheetName: 'Desempeño',
+      columns,
+      data
+    });
+  } catch (error) {
+    console.error('Error exporting performance:', error);
+    res.status(500).json({ error: 'Failed to export performance' });
   }
 };

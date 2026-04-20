@@ -1,4 +1,5 @@
 const categoriesServices = require('../services/categoriesServices');
+const excelService = require('../services/excelService');
 
 
 const createCategories = async (req, res) => {
@@ -60,4 +61,34 @@ const toggleActiveStatus = async (req, res) => {
   }
 };
 
-module.exports = { createCategories, getAllCategories, getCategoryById, updateCategories, toggleActiveStatus };
+const exportCategories = async (req, res) => {
+  try {
+    const categories = await categoriesServices.getAll(req.user);
+    
+    const columns = [
+      { header: 'Nombre', key: 'name', width: 25 },
+      { header: 'Descripción', key: 'description', width: 35 },
+      { header: 'Prefijo Barcode', key: 'barcodePrefix', width: 15 },
+      { header: 'Estado', key: 'status', width: 15 }
+    ];
+
+    const data = categories.map(c => ({
+      name: c.name,
+      description: c.description || 'N/A',
+      barcodePrefix: c.barcodePrefix || 'N/A',
+      status: c.isActive ? 'Activo' : 'Baja'
+    }));
+
+    await excelService.generateExcel({
+      res,
+      filename: `categorias_${new Date().toISOString().split('T')[0]}.xlsx`,
+      worksheetName: 'Categorías',
+      columns,
+      data
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { createCategories, getAllCategories, getCategoryById, updateCategories, toggleActiveStatus, exportCategories };

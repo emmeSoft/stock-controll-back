@@ -26,7 +26,8 @@ const create = async (dataSuppliers, user) => {
         data: { 
             ...cleanData, 
             store: { connect: { id: user.storeId } }
-        } 
+        },
+        include: { Image: true }
     });
     return response;
 }
@@ -88,7 +89,8 @@ const update = async (id, dataSuppliers, user) => {
 
     const response = await prisma.supplier.update({
         where: { id: id },
-        data: cleanData
+        data: cleanData,
+        include: { Image: true }
     });
     return response;
 }

@@ -184,7 +184,7 @@ const create = async (dataEmployee, user) => {
             store: assignedStoreId ? { connect: { id: assignedStoreId } } : undefined,
             roleId: targetRole.id
         },
-        include: { rbacRole: true }
+        include: { rbacRole: true, Image: true }
     });
     
     return { ...mapUserResponse(response), generatedPin: tempPin }; // Regla Negocio: Retorna solo en tiempo de req
@@ -275,7 +275,7 @@ const update = async (id, dataEmployee, user) => {
     const response = await prisma.user.update({
         where: { id: id },
         data: cleanData,
-        include: { rbacRole: true }
+        include: { rbacRole: true, Image: true }
     });
     return mapUserResponse(response);
 }

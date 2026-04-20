@@ -24,7 +24,10 @@ const create = async (dataStore, user) => {
         )
     );
 
-    const response = await prisma.store.create({ data: cleanData });
+    const response = await prisma.store.create({ 
+        data: cleanData,
+        include: { Image: true }
+    });
     return response;
 }
 
@@ -33,11 +36,14 @@ const getAll = async (user) => {
     // SISTEMA puede ver todas las tiendas (soporta role o isSistema)
     const isSistema = user.role === 'SISTEMA' || user.isSistema;
     if (isSistema) {
-        return await prisma.store.findMany();
+        return await prisma.store.findMany({
+            include: { Image: true }
+        });
     } else {
         // ADMINISTRADOR, ENCARGADO, VENDEDOR solo ven su tienda
         return await prisma.store.findMany({
-            where: { id: user.storeId }
+            where: { id: user.storeId },
+            include: { Image: true }
         });
     }
 }
@@ -52,7 +58,14 @@ const getById = async (id, user) => {
     }
 
     const response = await prisma.store.findUnique({
-        where: { id: id }
+        where: { id: id },
+        include: {
+            Image: {
+                orderBy: {
+                    order: 'asc'
+                }
+            }
+        }
     });
     
     if (!response) {
@@ -91,7 +104,8 @@ const update = async (id, dataStore, user) => {
 
     const response = await prisma.store.update({
         where: { id: id },
-        data: cleanData
+        data: cleanData,
+        include: { Image: true }
     });
     return response;
 }

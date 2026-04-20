@@ -46,7 +46,8 @@ const create = async (dataCategory, user) => {
             ...cleanData, 
             barcodePrefix,
             store: { connect: { id: user.storeId } }
-        } 
+        },
+        include: { Image: true }
     });
     return response;
 }
@@ -100,7 +101,8 @@ const update = async (id, dataCategory, user) => {
 
     const response = await prisma.categories.update({
         where: { id: id },
-        data: cleanData
+        data: cleanData,
+        include: { Image: true }
     });
     return response;
 }

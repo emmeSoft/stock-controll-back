@@ -65,7 +65,8 @@ const create = async (dataProduct, user) => {
             stock,
             barcode,
             storeId: user.storeId
-        }
+        },
+        include: { Image: true }
     });
 
     if (stock > 0) {
@@ -210,6 +211,7 @@ const update = async (id, dataProduct, user) => {
         data: cleanData,
 
         include: {
+            Image: true,
             category: {
                 select: {
                     name: true
@@ -246,7 +248,7 @@ const setActiveStatus = async (id, isActive, user) => {
     const response = await prisma.product.update({
         where: { id },
         data: { isActive },
-        include: { category: true }
+        include: { Image: true, category: true }
     });
 
     // Validar que la categoría esté activa si se intenta dar de alta el producto
@@ -281,6 +283,7 @@ const adjustStock = async (id, amount, description, user) => {
             where: { id },
             data: { stock: newStock },
             include: {
+                Image: true,
                 category: {
                     select: {
                         name: true

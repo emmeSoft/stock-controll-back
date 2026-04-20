@@ -25,6 +25,8 @@ function reverseTranslate(entity) {
     entity = "categories";
   } else if (entity === "products" || entity === "product") {
     entity = "product";
+  } else if (entity === "stores" || entity === "store") {
+    entity = "store";
   }
 
   return entity;

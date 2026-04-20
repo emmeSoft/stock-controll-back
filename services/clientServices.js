@@ -30,7 +30,8 @@ const create = async (dataClient, user) => {
         data: { 
             ...cleanData, 
             store: { connect: { id: user.storeId } }
-        } 
+        },
+        include: { Image: true }
     });
     // console.log('Client created:');
     return response;
@@ -132,7 +133,8 @@ const update = async (id, dataClient, user) => {
 
     const response = await prisma.client.update({
         where: { id: id },
-        data: cleanData
+        data: cleanData,
+        include: { Image: true }
     });
     return response;
 }

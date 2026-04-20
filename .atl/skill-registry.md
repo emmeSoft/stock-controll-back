@@ -6,12 +6,12 @@
 
 | Trigger | Skill | Path |
 |---------|-------|------|
-| When creating a pull request, opening a PR, or preparing changes for review | branch-pr | file:///C:/Users/jmaxi/.config/opencode/skills/branch-pr/SKILL.md |
-| When writing Go tests, using teatest, or adding test coverage | go-testing | file:///C:/Users/jmaxi/.config/opencode/skills/go-testing/SKILL.md |
-| When creating a GitHub issue, reporting a bug, or requesting a feature | issue-creation | file:///C:/Users/jmaxi/.config/opencode/skills/issue-creation/SKILL.md |
-| When user says "judgment day", "judgment-day", "review adversarial", "dual review", "doble review", "juzgar", "que lo juzguen" | judgment-day | file:///C:/Users/jmaxi/.config/opencode/skills/judgment-day/SKILL.md |
-| When user asks to create a new skill, add agent instructions, or document patterns for AI | skill-creator | file:///C:/Users/jmaxi/.config/opencode/skills/skill-creator/SKILL.md |
-| When user says "update skills", "skill registry", "actualizar skills", "update registry", or after installing/removing skills | skill-registry | file:///C:/Users/jmaxi/.config/opencode/skills/skill-registry/SKILL.md |
+| When creating a pull request, opening a PR, or preparing changes for review | branch-pr | file:///C:/Users/PODER%20JUDICIAL/.gemini/antigravity/skills/branch-pr/SKILL.md |
+| When writing Go tests, using teatest, or adding test coverage | go-testing | file:///C:/Users/PODER%20JUDICIAL/.gemini/antigravity/skills/go-testing/SKILL.md |
+| When creating a GitHub issue, reporting a bug, or requesting a feature | issue-creation | file:///C:/Users/PODER%20JUDICIAL/.gemini/antigravity/skills/issue-creation/SKILL.md |
+| When user says "judgment day", "judgment-day", "review adversarial", "dual review", "doble review", "juzgar", "que lo juzguen" | judgment-day | file:///C:/Users/PODER%20JUDICIAL/.gemini/antigravity/skills/judgment-day/SKILL.md |
+| When user asks to create a new skill, add agent instructions, or document patterns for AI | skill-creator | file:///C:/Users/PODER%20JUDICIAL/.gemini/antigravity/skills/skill-creator/SKILL.md |
+| When user says "update skills", "skill registry", "actualizar skills", "update registry", or after installing/removing skills | skill-registry | file:///C:/Users/PODER%20JUDICIAL/.gemini/antigravity/skills/skill-registry/SKILL.md |
 
 ## Compact Rules
 
@@ -46,14 +46,13 @@
 
 | File | Path | Notes |
 |------|------|-------|
-| AGENTS.md | C:\Users\jmaxi\.config\opencode\AGENTS.md | Global AI agent config (rules, personality, model assignments) |
-| CONTEXT-HANDOVER.md | E:\proyects\stock-controll-back\CONTEXT-HANDOVER.md | Handoff document for universal discount rules refactor |
-| openspec/config.yaml | E:\proyects\stock-controll-back\openspec\config.yaml | SDD configuration |
-| .atl/skill-registry.md | E:\proyects\stock-controll-back\.atl\skill-registry.md | This registry |
+| CONTEXT-HANDOVER.md | c:\Users\PODER JUDICIAL\Desktop\controll\stock-controll-back\CONTEXT-HANDOVER.md | Project context handover |
+| openspec/config.yaml | c:\Users\PODER JUDICIAL\Desktop\controll\stock-controll-back\openspec\config.yaml | SDD configuration |
+| .atl/skill-registry.md | c:\Users\PODER JUDICIAL\Desktop\controll\stock-controll-back\.atl\skill-registry.md | This registry |
 
 ## Project Standards (auto-resolved)
 
-### Global Agent Rules (from AGENTS.md)
+### Global Agent Rules
 - Never add "Co-Authored-By" or AI attribution to commits
 - Never build after changes
 - When asking a question, STOP and wait for response
@@ -69,10 +68,6 @@
 - CAPS for emphasis
 
 ### Testing
-- No test framework installed — tests run manually via `node tests/...`
-- Strict TDD disabled
-
-### Discount Engine Rules
-- Never break the legacy engine — run universal in parallel
-- engineVersion field is the single source of truth for routing
-- Validate dual conditions via validateConditionsDual()
+- No formal test framework installed in package.json
+- Tests run manually via `node tests/...`
+- Strict TDD disabled — Strict TDD Mode unavailable (no test runner detected)

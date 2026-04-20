@@ -1,5 +1,5 @@
-
 const suppliersServices = require('../services/suppliersServices');
+const excelService = require('../services/excelService');
 
 
 const createSuppliers = async (req, res) => {
@@ -62,4 +62,36 @@ const toggleActiveStatus = async (req, res) => {
   }
 };
 
-module.exports = { createSuppliers, getAllSuppliers, getSupplierById, updateSuppliers, toggleActiveStatus };
+const exportSuppliers = async (req, res) => {
+  try {
+    const suppliers = await suppliersServices.getAll(req.user);
+    
+    const columns = [
+      { header: 'CUIT', key: 'taxId', width: 15 },
+      { header: 'Nombre/Razón Social', key: 'fullName', width: 30 },
+      { header: 'Email', key: 'email', width: 25 },
+      { header: 'Teléfono', key: 'phoneNumber', width: 15 },
+      { header: 'Estado', key: 'status', width: 15 }
+    ];
+
+    const data = suppliers.map(s => ({
+      taxId: s.cuit || 'N/A',
+      fullName: s.fullName,
+      email: s.email || 'N/A',
+      phoneNumber: s.phoneNumber || 'N/A',
+      status: s.isActive ? 'Activo' : 'Baja'
+    }));
+
+    await excelService.generateExcel({
+      res,
+      filename: `proveedores_${new Date().toISOString().split('T')[0]}.xlsx`,
+      worksheetName: 'Proveedores',
+      columns,
+      data
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { createSuppliers, getAllSuppliers, getSupplierById, updateSuppliers, toggleActiveStatus, exportSuppliers };
