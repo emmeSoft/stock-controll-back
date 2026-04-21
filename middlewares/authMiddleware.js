@@ -31,35 +31,56 @@ const authMiddleware = async (req, res, next) => {
     const rbacRoleName = dbUser.rbacRole?.name || 'VENDEDOR';
     const rbacRoleId = dbUser.rbacRole?.id;
 
-    req.user = decoded; // { id, email, role, storeId, ... }
-    req.user.req = req; // Inyectamos req para que los servicios vean cookies si necesitan
+    // Actualizamos la información del usuario con la de la base de datos actual
+    req.user = {
+      ...decoded,
+      storeId: dbUser.storeId, // Sincronización Real-time: El JWT ya no manda sobre el storeId (SC-2.0 Fix)
+      rbacRole: rbacRoleName,
+      roleId: rbacRoleId,
+      isSistema: rbacRoleName === 'SISTEMA'
+    };
+
+    req.user.req = req; 
     
-    // Agregar información RBAC al usuario
-    req.user.rbacRole = rbacRoleName;
-    req.user.roleId = rbacRoleId;
-
-    // Si no es SISTEMA y no tiene storeId asignado, no puede hacer nada
-    if (rbacRoleName !== 'SISTEMA' && !decoded.storeId) {
-       return res.status(403).json({ message: 'Usuario sin tienda asignada' });
-    }
-
     // [New] Global Store Context: Si el Frontend envía la cabecera x-store-id
     // Y el usuario es SISTEMA, "falsificamos" temporalmente su req.user.storeId
-    // para que todos los controladores actúen como si fuera un Admin Local de esa tienda.
     const activeStoreHeader = req.headers['x-store-id'];
-    // console.log('[Auth] x-store-id header:', activeStoreHeader);
-    // console.log('[Auth] rbacRoleName:', rbacRoleName);
     
-    if (rbacRoleName === 'SISTEMA' && activeStoreHeader && activeStoreHeader !== "ALL") {
-       req.user.storeId = activeStoreHeader;
-       req.user.isGlobalOverride = true; // Flag para que los servicios sepán que es override
-       // console.log('[Auth] SISTEMA con override, storeId:', activeStoreHeader);
+    if (req.user.isSistema) {
+       // Si es SISTEMA y selecciona una tienda específica, aplicamos el override
+       if (activeStoreHeader && activeStoreHeader !== "ALL") {
+          req.user.storeId = activeStoreHeader;
+          req.user.isGlobalOverride = true;
+       } else {
+          // Si es SISTEMA y está en "ALL" (Global), nos ASEGURAMOS de que el storeId sea null
+          // Esto previene que use un storeId "basura" que pueda tener en su perfil de la DB
+          req.user.storeId = null;
+          req.user.isGlobalOverride = false;
+       }
     }
 
-    // SISTEMA siempre tiene acceso global sin restricciones
-    if (rbacRoleName === 'SISTEMA') {
-       req.user.isSistema = true;
-       // console.log('[Auth] SISTEMA flag set');
+    // Validación de integridad: Si no es SISTEMA y no tiene tienda, fuera.
+    if (!req.user.isSistema && !req.user.storeId) {
+       return res.status(403).json({ message: 'Tu cuenta no tiene una tienda asignada para operar.' });
+    }
+
+    // [Simulation Mode] Solo SISTEMA puede activar la simulación de roles.
+    if (req.user.isSistema) {
+       const SIMULABLE_ROLES = ['ADMINISTRADOR', 'ENCARGADO', 'VENDEDOR'];
+       const simulatedRole = req.headers['x-simulated-role'];
+       
+       if (simulatedRole && SIMULABLE_ROLES.includes(simulatedRole)) {
+         req.user.simulatedRole = simulatedRole;
+         req.user.isSimulating = true;
+
+         // REGLA CRÍTICA: Si simula un rol operativo, DEBE tener una tienda seleccionada.
+         // No se puede ser "Vendedor" en el limbo de "TODAS LAS TIENDAS".
+         if (!req.user.storeId) {
+            return res.status(403).json({ 
+                message: 'Para simular este rol operativo, debes seleccionar una tienda específica primero.' 
+            });
+         }
+       }
     }
 
     next();

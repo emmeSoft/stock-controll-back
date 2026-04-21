@@ -51,8 +51,10 @@ const getAllRegisters = async (req, res) => {
     const result = await cajaServices.getAllRegisters(req.user, req.query);
     res.json(result);
   } catch (error) {
-    const statusCode = error.message.includes('máximo') ? 400 : 400;
-    res.status(statusCode).json({ message: error.message });
+    const isLimitError = error.message.includes('máximo');
+    res.status(isLimitError ? 400 : 500).json({ 
+      message: isLimitError ? error.message : 'Error al obtener el historial de cajas' 
+    });
   }
 };
 

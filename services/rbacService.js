@@ -17,7 +17,7 @@ const RBAC_SHADOW = process.env.RBAC_SHADOW === 'true';
  * @param {string} params.permission - Permiso requerido (ej: "product.create")
  * @returns {Promise<boolean>} true si tiene permiso, false si no
  */
-async function checkPermission({ userId, storeId, permission }) {
+async function checkPermission({ userId, storeId, permission, simulatedRole }) {
   // Fail-safe: if RBAC not explicitly enabled, deny by default
   if (!RBAC_ENABLED && !RBAC_SHADOW) {
     console.warn(`[RBAC] Access denied: RBAC not enabled (RBAC_ENABLED=${process.env.RBAC_ENABLED}, RBAC_SHADOW=${process.env.RBAC_SHADOW}). User: ${userId}, Permission: ${permission}, Store: ${storeId}`);
@@ -58,10 +58,29 @@ async function checkPermission({ userId, storeId, permission }) {
       return false;
     }
 
-    // 2. SISTEMA: acceso total sin restricción de storeId
-    // Si hay storeId, verificamos que exista (para protección)
-    // Si NO hay storeId, permite acceso global
+    // 2. SISTEMA: acceso total — salvo que esté en modo simulación
     if (user.rbacRole.name === 'SISTEMA') {
+      // Modo simulación: restringir permisos según el rol simulado
+      if (simulatedRole) {
+        // Excepción: Permitir siempre la lectura de tiendas para el selector del Sidebar
+        if (permission === 'store.read') return true;
+
+        const simRole = await prisma.role.findFirst({
+          where: { name: simulatedRole },
+          include: { permissions: { include: { permission: true } } }
+        });
+        if (!simRole) {
+          console.warn(`[RBAC-SIM] Rol simulado "${simulatedRole}" no encontrado en DB`);
+          return false;
+        }
+        const simPermissions = simRole.permissions.map(p => p.permission.name);
+        const hasPermission = simPermissions.includes(permission);
+        if (!hasPermission) {
+          console.warn(`[RBAC-SIM] SISTEMA simulando ${simulatedRole}: DENIED "${permission}"`);
+        }
+        return hasPermission;
+      }
+
       if (storeId) {
         // Si especificó storeId, verificar que exista
         const storeExists = await prisma.store.findUnique({ where: { id: storeId } });

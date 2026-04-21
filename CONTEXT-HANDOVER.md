@@ -548,5 +548,33 @@ Se realizó un ciclo completo de auditoría de seguridad (Security Audit 2026-04
 
 ---
 
-*Última actualización: 20 de Abril 2026*
-*Estado: Motor de caja, validaciones transaccionales y descuentos 100% blindados.*
+---
+
+## 11. Blindaje de Roles y Modernización de Etiquetas — 20 de Abril 2026 (Noche)
+
+### Estado: COMPLETO ✅
+
+### Cambios Realizados
+
+| Tema | Estado | Descripción |
+| :--- | :--- | :--- |
+| **RBAC Vendedores** | ✅ RESUELTO | Se habilitó la ruta `/products` para consulta. Se ocultaron botones de "Agregar", "Editar" y "Ajustar Stock" en Productos, Detalles y Descuentos para el rol `VENDEDOR`. |
+| **Sidebar UX** | ✅ RESUELTO | Agregados links directos a **Productos** y **Descuentos** para agilizar la operación diaria de todos los roles. |
+| **Migración Barcode** | ✅ RESUELTO | Reemplazo de la fuente `ConnectCode39` por **JsBarcode (Code 128)**. Mejora drástica en densidad horizontal (etiquetas más pequeñas) y estabilidad gráfica. |
+| **Limpieza de Deuda** | ✅ RESUELTO | Eliminación de `ConnectCode39.ttf` y `barcode.css`. El sistema ya no depende de la descarga de fuentes externas para imprimir. |
+
+### Detalles Técnicos de la Sesión
+
+#### Blindaje "View-Only" para Operativos
+- Se unificó el criterio de permisos en `Details.jsx`. Ahora el botón de edición está estrictamente reservado para `SISTEMA, ADMINISTRADOR, ENCARGADO`.
+- `GenericTableSection.jsx` ahora recibe la prop `createRoles` para filtrar el botón de creación desde el componente padre.
+
+#### Motor de Etiquetas Moderno (JsBarcode)
+- **Implementación**: Se instaló `jsbarcode` y se refactorizaron `Details.jsx` y `BarcodeSuccessModal.jsx`.
+- **Renderizado**: El sistema genera un canvas en memoria, extrae el `dataURL` y lo inyecta como una imagen en la ventana de impresión. Esto garantiza compatibilidad 1:1 entre lo que se ve en pantalla y lo que sale por la impresora térmica.
+- **Formato**: Se estandarizó el uso de **CODE 128**, lo que reduce el tamaño físico de la etiqueta significativamente sin cambiar los datos (mismos 9 dígitos de base).
+
+---
+
+*Última actualización: 20 de Abril 2026 (Cierre de Sesión)*
+*Estado: Roles estabilizados y sistema de etiquetado modernizado para producción.*

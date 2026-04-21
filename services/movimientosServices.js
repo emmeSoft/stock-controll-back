@@ -22,7 +22,9 @@ const createMovement = async (data, user) => {
             user: { connect: { id: user.id } },
             type: type,
             amount: parseFloat(amount),
-            description: description || null,
+            description: user.isSimulating 
+                ? `${description || ''} (Simulada por SISTEMA)`.trim() 
+                : (description || null),
             reference: reference || null
         }
     });

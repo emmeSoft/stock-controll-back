@@ -65,7 +65,8 @@ const openRegister = async (data, user) => {
             store: { connect: { id: user.storeId } },
             openedByUser: { connect: { id: user.id } },
             openingAmount: parseFloat(openingAmount),
-            status: 'OPEN'
+            status: 'OPEN',
+            observation: user.isSimulating ? 'Apertura Simulada por SISTEMA' : null
         }
     });
 
@@ -142,7 +143,9 @@ const closeRegister = async (data, user) => {
             closingAmount: parseFloat(closingAmount),
             expectedAmount: expectedAmount,
             difference: difference,
-            observation: observation || null
+            observation: user.isSimulating 
+                ? `${observation || ''} (Simulada por SISTEMA)`.trim() 
+                : (observation || null)
         }
     });
 

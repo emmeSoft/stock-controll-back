@@ -10,7 +10,19 @@ const excelService = require('../services/excelService');
 exports.getSellerPerformance = async (req, res) => {
   try {
     const { from, to } = req.query;
-    const { storeId } = req.user;
+    const { storeId, role, isSistema } = req.user;
+
+    // SISTEMA users MUST have a storeId selected (via context header or specific assignment)
+    // to avoid cross-store data collision in performance metrics.
+    if (!storeId) {
+      const isAdminRole = role === 'SISTEMA' || isSistema;
+      if (isAdminRole) {
+        return res.status(400).json({ 
+          error: 'Debe seleccionar una sucursal para visualizar el desempeño de vendedores.' 
+        });
+      }
+      return res.status(403).json({ error: 'No tiene una sucursal asignada.' });
+    }
 
     const dateFilter = {};
     if (from) dateFilter.gte = new Date(from);
@@ -84,7 +96,17 @@ exports.getSellerPerformance = async (req, res) => {
 exports.exportPerformance = async (req, res) => {
   try {
     const { from, to } = req.query;
-    const { storeId } = req.user;
+    const { storeId, role, isSistema } = req.user;
+
+    if (!storeId) {
+      const isAdminRole = role === 'SISTEMA' || isSistema;
+      if (isAdminRole) {
+        return res.status(400).json({ 
+          error: 'Debe seleccionar una sucursal para exportar el desempeño.' 
+        });
+      }
+      return res.status(403).json({ error: 'No tiene una sucursal asignada.' });
+    }
 
     const dateFilter = {};
     if (from) dateFilter.gte = new Date(from);

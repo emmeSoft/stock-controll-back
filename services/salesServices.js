@@ -420,7 +420,7 @@ const create = async (saleData, user) => {
           previousStock,
           movementAmount: -item.quantity,
           currentStock:   updated.stock,
-          description:    `Venta POS #${order.id.slice(-6)}`,
+          description:    `Venta POS #${order.id.slice(-6)}${user.isSimulating ? ' (Simulada por SISTEMA)' : ''}`,
         },
       });
     }

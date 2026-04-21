@@ -34,9 +34,16 @@ async function generateExcel({ res, filename, worksheetName, columns, data }) {
   // Add data rows
   worksheet.addRows(data);
 
-  // Style all data rows
+  // Style and sanitize all data rows
   worksheet.eachRow((row, rowNumber) => {
     row.eachCell((cell) => {
+      // 1. Security: Escape Excel Formula Injection (=, +, -, @)
+      // Only for string values to avoid corrupting Numbers, Dates or Booleans
+      if (typeof cell.value === 'string' && /^[=+\-@\s]/.test(cell.value)) {
+        cell.value = `'${cell.value}`;
+      }
+
+      // 2. Styling
       cell.border = {
         top: { style: 'thin' },
         left: { style: 'thin' },

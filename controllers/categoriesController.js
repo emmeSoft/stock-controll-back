@@ -37,11 +37,18 @@ const updateCategories = async (req, res) => {
   const { id } = req.params;
   const dataCategories = req.body;
 
+  // Redundant Ownership Validation (Anti-IDOR)
+  if (!req.user.isSistema) {
+    const prisma = require('../db/database.prisma');
+    const ownerEntity = await prisma.categories.findFirst({ where: { id, storeId: req.user.storeId } });
+    if (!ownerEntity) return res.status(403).json({ message: 'No tenés permiso para modificar esta categoría.' });
+  }
+
   try {
     const result = await categoriesServices.update(id, dataCategories, req.user);
     res.json(result);
   } catch (error) {
-    res.status(401).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 };
 
@@ -53,11 +60,18 @@ const toggleActiveStatus = async (req, res) => {
     return res.status(400).json({ message: "Parámetro isActive inválido" });
   }
 
+  // Redundant Ownership Validation (Anti-IDOR)
+  if (!req.user.isSistema) {
+    const prisma = require('../db/database.prisma');
+    const ownerEntity = await prisma.categories.findFirst({ where: { id, storeId: req.user.storeId } });
+    if (!ownerEntity) return res.status(403).json({ message: 'No tenés permiso para gestionar el estado de esta categoría.' });
+  }
+
   try {
     const result = await categoriesServices.setActiveStatus(id, isActive, req.user);
     res.json(result);
   } catch (error) {
-    res.status(401).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 };
 

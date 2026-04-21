@@ -41,11 +41,18 @@ const updateProduct = async (req, res) => {
   const { id } = req.params;
   const dataProduct = req.body;
 
+  // Redundant Ownership Validation (Anti-IDOR)
+  if (!req.user.isSistema) {
+    const prisma = require('../db/database.prisma');
+    const ownerEntity = await prisma.product.findFirst({ where: { id, storeId: req.user.storeId } });
+    if (!ownerEntity) return res.status(403).json({ message: 'No tenés permiso para modificar este producto.' });
+  }
+
   try {
     const result = await productsServices.update(id, dataProduct, req.user);
     res.json(result);
   } catch (error) {
-    res.status(401).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 };
 
@@ -57,11 +64,18 @@ const toggleActiveStatus = async (req, res) => {
     return res.status(400).json({ message: "Parámetro isActive inválido" });
   }
 
+  // Redundant Ownership Validation (Anti-IDOR)
+  if (!req.user.isSistema) {
+    const prisma = require('../db/database.prisma');
+    const ownerEntity = await prisma.product.findFirst({ where: { id, storeId: req.user.storeId } });
+    if (!ownerEntity) return res.status(403).json({ message: 'No tenés permiso para gestionar el estado de este producto.' });
+  }
+
   try {
     const result = await productsServices.setActiveStatus(id, isActive, req.user);
     res.json(result);
   } catch (error) {
-    res.status(401).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 };
 
@@ -75,6 +89,13 @@ const adjustStock = async (req, res) => {
 
   if (!description || typeof description !== 'string' || description.trim() === '') {
     return res.status(400).json({ message: "El motivo (description) es obligatorio" });
+  }
+
+  // Redundant Ownership Validation (Anti-IDOR)
+  if (!req.user.isSistema) {
+    const prisma = require('../db/database.prisma');
+    const ownerEntity = await prisma.product.findFirst({ where: { id, storeId: req.user.storeId } });
+    if (!ownerEntity) return res.status(403).json({ message: 'No tenés permiso para ajustar stock de este producto.' });
   }
 
   try {

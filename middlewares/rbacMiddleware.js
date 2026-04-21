@@ -42,7 +42,8 @@ const requirePermission = (permission) => {
       const hasPermission = await rbacService.checkPermission({
         userId,
         storeId,
-        permission
+        permission,
+        simulatedRole: req.user?.simulatedRole || null,
       });
 
       if (!hasPermission) {
