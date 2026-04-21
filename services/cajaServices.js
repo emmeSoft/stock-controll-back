@@ -47,6 +47,10 @@ const openRegister = async (data, user) => {
         throw new Error('Contraseña incorrecta. Acción denegada.');
     }
 
+    if (!user.storeId) {
+        throw new Error('No tienes una tienda asignada para operar la caja.');
+    }
+
     // Regla: solo puede existir una caja abierta por tienda al mismo tiempo
     const existingOpen = await prisma.cashRegister.findFirst({
         where: { storeId: user.storeId, status: 'OPEN' }
@@ -58,10 +62,11 @@ const openRegister = async (data, user) => {
 
     const caja = await prisma.cashRegister.create({
         data: {
-            storeId: user.storeId,
-            openedByUserId: user.id,
+            store: { connect: { id: user.storeId } },
+            openedByUser: { connect: { id: user.id } },
             openingAmount: parseFloat(openingAmount),
-            status: 'OPEN'
+            status: 'OPEN',
+            observation: user.isSimulating ? 'Apertura Simulada por SISTEMA' : null
         }
     });
 
@@ -81,6 +86,10 @@ const closeRegister = async (data, user) => {
     
     if (!isPasswordValid) {
         throw new Error('Contraseña incorrecta. Acción denegada.');
+    }
+
+    if (!user.storeId) {
+        throw new Error('No tienes una tienda asignada para cerrar la caja de esta sucursal.');
     }
 
     const openRegister = await prisma.cashRegister.findFirst({
@@ -129,12 +138,14 @@ const closeRegister = async (data, user) => {
         where: { id: openRegister.id },
         data: {
             status: 'CLOSED',
-            closedByUserId: user.id,
+            closedByUser: { connect: { id: user.id } },
             closedAt: new Date(),
             closingAmount: parseFloat(closingAmount),
             expectedAmount: expectedAmount,
             difference: difference,
-            observation: observation || null
+            observation: user.isSimulating 
+                ? `${observation || ''} (Simulada por SISTEMA)`.trim() 
+                : (observation || null)
         }
     });
 
@@ -142,6 +153,8 @@ const closeRegister = async (data, user) => {
 };
 
 const getCurrentRegister = async (user) => {
+    if (!user.storeId) return null; // Prevenir crash de Prisma si el usuario no tiene tienda
+    
     const openRegister = await prisma.cashRegister.findFirst({
         where: { storeId: user.storeId, status: 'OPEN' },
         include: { openedByUser: true }
@@ -202,7 +215,8 @@ const getGlobalHistory = async (user, query = {}) => {
             orderDetails: {
                 include: { product: true }
             },
-            orderPayments: true
+            orderPayments: true,
+            appliedDiscounts: true
         }
     });
 
@@ -223,8 +237,12 @@ const getAllRegisters = async (user, query = {}) => {
     const { startDate, endDate } = query;
     const range = buildDateRange(startDate, endDate);
 
+    // SISTEMA puede ver todos los registros si no hay override de tienda
+    const isSistema = user.role === 'SISTEMA' || user.isSistema;
+    const canSeeAll = isSistema && !user.isGlobalOverride;
+
     const whereClause = {
-        ...(user.storeId ? { storeId: user.storeId } : {}),
+        ...(canSeeAll ? {} : (user.storeId ? { storeId: user.storeId } : {})),
         openedAt: { gte: range.start, lte: range.end },
     };
 

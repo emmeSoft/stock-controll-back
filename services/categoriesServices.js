@@ -2,7 +2,6 @@ const prisma = require(`../db/database.prisma`)
 
 
 const create = async (dataCategory, user) => {
-    console.log('Creating category...');
     if (!user.storeId) {
         throw new Error('Debe seleccionar una tienda para asignar a la categoría.');
     }
@@ -29,27 +28,41 @@ const create = async (dataCategory, user) => {
         barcodePrefix = "100";
     }
 
+    const allowedFields = [
+        "name", 
+        "description", 
+        "profilePicture", 
+        "isActive"
+    ];
+
+    const cleanData = Object.fromEntries(
+        Object.entries(dataCategory).filter(
+            ([key, value]) => allowedFields.includes(key) && value !== undefined
+        )
+    );
+
     const response = await prisma.categories.create({ 
         data: { 
-            ...dataCategory, 
+            ...cleanData, 
             barcodePrefix,
-            storeId: user.storeId 
-        } 
+            store: { connect: { id: user.storeId } }
+        },
+        include: { Image: true }
     });
-    console.log('Category created:', response.id);
     return response;
 }
 
 const getAll = async (user) => {
-    console.log('Fetching all categories...');
-    const whereClause = user.storeId ? { storeId: user.storeId } : {};
+    // SISTEMA puede ver todas las categorías si no hay override de tienda
+    const isSistema = user.role === 'SISTEMA' || user.isSistema;
+    const canSeeAll = isSistema && !user.isGlobalOverride;
+    const whereClause = canSeeAll ? {} : { storeId: user.storeId };
     const response = await prisma.categories.findMany({ where: whereClause });
-    console.log('Categories fetched:');
     return response;
 }
 
 const getById = async (id, user) => {
-    console.log(`Fetching category with ID: ${id}`);
+    // console.log(`Fetching category with ID: ${id}`);
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const response = await prisma.categories.findFirst({
         where: whereClause,
@@ -64,27 +77,37 @@ const getById = async (id, user) => {
     if (!response) {
         throw new Error(`Category with ID ${id} not found`);
     }
-    console.log('Category found:');
     return response;
 }
 
 const update = async (id, dataCategory, user) => {
-    console.log(`Updating category with ID: ${id}`);
 
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const existing = await prisma.categories.findFirst({ where: whereClause });
     if (!existing) throw new Error("Category not found or access denied");
 
+    const allowedFields = [
+        "name", 
+        "description", 
+        "profilePicture", 
+        "isActive"
+    ];
+
+    const cleanData = Object.fromEntries(
+        Object.entries(dataCategory).filter(
+            ([key, value]) => allowedFields.includes(key) && value !== undefined
+        )
+    );
+
     const response = await prisma.categories.update({
         where: { id: id },
-        data: dataCategory
+        data: cleanData,
+        include: { Image: true }
     });
-    console.log('Category updated:');
     return response;
 }
 
 const setActiveStatus = async (id, isActive, user) => {
-    console.log(`${isActive ? "Enabling" : "Disabling"} category with ID: ${id}`);
 
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
     const existing = await prisma.categories.findFirst({ where: whereClause });
@@ -101,10 +124,8 @@ const setActiveStatus = async (id, isActive, user) => {
             where: { categoryId: id, storeId: user.storeId },
             data: { isActive: false }
         });
-        console.log(`All products in category ${id} have been deactivated.`);
     }
 
-    console.log(`Category ${isActive ? "enabled" : "disabled"}:`);
     return response;
 }
 

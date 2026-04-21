@@ -1,6 +1,69 @@
 const prisma = require('../db/database.prisma');
+const excelService = require('../services/excelService');
 
 const MAX_DAYS = 30;
+
+exports.exportStockHistory = async (req, res) => {
+  try {
+    const { storeId } = req.user || {};
+    const { startDate, endDate } = req.query;
+
+    const range = buildDateRange(startDate, endDate);
+    if (range.error) return res.status(400).json({ error: range.error });
+
+    const whereClause = {
+      ...(storeId ? { storeId } : {}),
+      createdAt: { gte: range.start, lte: range.end },
+    };
+
+    const history = await prisma.stockHistory.findMany({
+      where: whereClause,
+      include: {
+        product: true,
+        user: true,
+        store: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const columns = [
+      { header: 'Fecha', key: 'date', width: 20 },
+      { header: 'Producto', key: 'product', width: 30 },
+      { header: 'SKU', key: 'sku', width: 15 },
+      { header: 'Tipo', key: 'type', width: 15 },
+      { header: 'Cantidad', key: 'amount', width: 10 },
+      { header: 'Stock Previo', key: 'prev', width: 12 },
+      { header: 'Stock Actual', key: 'curr', width: 12 },
+      { header: 'Responsable', key: 'user', width: 25 },
+      { header: 'Descripción', key: 'desc', width: 35 }
+    ];
+
+    const data = history.map(h => ({
+      date: h.createdAt,
+      product: h.product ? h.product.name : 'Producto Eliminado',
+      sku: h.product ? (h.product.sku || 'N/A') : 'N/A',
+      type: h.type,
+      amount: h.movementAmount,
+      prev: h.previousStock,
+      curr: h.currentStock,
+      user: h.user ? `${h.user.firstName} ${h.user.lastName}` : 'Sistema',
+      desc: h.description
+    }));
+
+    await excelService.generateExcel({
+      res,
+      filename: `historial_stock_${new Date().toISOString().split('T')[0]}.xlsx`,
+      worksheetName: 'Historial Stock',
+      columns,
+      data
+    });
+  } catch (error) {
+    console.error('Error exporting stock history:', error);
+    res.status(500).json({ error: 'Failed to export stock history' });
+  }
+};
 const DEFAULT_DAYS = 7;
 
 function buildDateRange(startDate, endDate) {

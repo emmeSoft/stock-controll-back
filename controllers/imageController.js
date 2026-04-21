@@ -75,9 +75,29 @@ const uploadImage = async (req, res) => {
     const entityId = req.body[dynamicKey];
 
     // el modelo se obtiene así: productId -> product
-    let entityModel = dynamicKey.replace("Id", "");
-    if(entityModel === "category") {
-      entityModel = "categories";
+    let entityModel = reverseTranslate(dynamicKey.replace("Id", ""));
+
+    // 1.5 Verificar propiedad de la entidad antes de consumir recursos en Cloudinary (Anti-IDOR)
+    // SISTEMA: acceso global irrestricto.
+    // User entities: ADMINISTRADOR puede gestionar usuarios de su tienda, VENDEDOR solo su propio avatar.
+    // Resto: la entidad debe pertenecer a la tienda del usuario autenticado.
+    if (!req.user.isSistema) {
+      if (entityModel === 'user') {
+        if (req.user.rbacRole === 'ADMINISTRADOR') {
+          const targetUser = await prisma.user.findFirst({ where: { id: entityId, storeId: req.user.storeId } });
+          if (!targetUser) return res.status(403).json({ message: 'No tenés permiso para gestionar imágenes de este usuario.' });
+        } else {
+          if (entityId !== req.user.id) return res.status(403).json({ message: 'Solo podés gestionar tu propio avatar.' });
+        }
+      } else if (entityModel === 'store') {
+        // Un administrador solo puede editar SU tienda
+        if (entityId !== req.user.storeId) {
+          return res.status(403).json({ message: 'No tenés permiso para gestionar imágenes de esta tienda.' });
+        }
+      } else {
+        const ownerEntity = await prisma[entityModel].findFirst({ where: { id: entityId, storeId: req.user.storeId } });
+        if (!ownerEntity) return res.status(403).json({ message: 'No tenés permiso para gestionar imágenes de esta entidad.' });
+      }
     }
 
     // 2. Subir a Cloudinary
@@ -94,13 +114,7 @@ const uploadImage = async (req, res) => {
       });
 
     const result = await uploadToCloudinary();
-      console.log('asdadas', {
-        url: result.secure_url,
-        altText: req.body.altText || "",
-        isMain: req.body.isMain === "true" || false,
-        order: Number(req.body.order ?? 0),
-        [dynamicKey]: entityId, // ← súper dinámico
-      },)
+
     // 3. Guardar imagen en DB (incluyendo cloudinaryId para poder eliminar luego)
     const image = await prisma.image.create({
       data: {
@@ -127,7 +141,7 @@ const setMainImage = async (req, res) => {
   try {
     const { id } = req.params;
     const { newProfilePicture, entity, imageId } = req.body;
-    
+
 
     if (!id || !newProfilePicture || !entity || !imageId) {
       return res.status(400).json({ message: "Missing required fields" });
@@ -136,30 +150,45 @@ const setMainImage = async (req, res) => {
 
     const translatedEntity = reverseTranslate(entity);
 
+    // Verificar propiedad de la entidad (Anti-IDOR)
+    if (!req.user.isSistema) {
+      if (translatedEntity === 'user') {
+        if (req.user.rbacRole === 'ADMINISTRADOR') {
+          const targetUser = await prisma.user.findFirst({ where: { id, storeId: req.user.storeId } });
+          if (!targetUser) return res.status(403).json({ message: 'No tenés permiso para gestionar imágenes de este usuario.' });
+        } else {
+          if (id !== req.user.id) return res.status(403).json({ message: 'Solo podés gestionar tu propio avatar.' });
+        }
+      } else {
+        const ownerEntity = await prisma[translatedEntity].findFirst({ where: { id, storeId: req.user.storeId } });
+        if (!ownerEntity) return res.status(403).json({ message: 'No tenés permiso para gestionar imágenes de esta entidad.' });
+      }
+    }
+
     const images = await prisma.image.findMany({
-      where: { 
+      where: {
         [`${translatedEntity}Id`]: id // traer todas las imagenes de esa entidad
       },
       orderBy: { order: 'asc' }
     });
 
-    if(!images || images.length === 0) {
+    if (!images || images.length === 0) {
       return res.status(404).json({ message: "No images found for this entityId" });
     }
 
     // marco todas las imagenes como NO Principales
 
     await prisma.image.updateMany({
-      where: { [`${translatedEntity}Id`]: id},
-      data : { isMain: false }
+      where: { [`${translatedEntity}Id`]: id },
+      data: { isMain: false }
     });
 
     // marco la iamgen seleccionada como principal y con el order 0
 
-    await prisma.image.update ({
+    await prisma.image.update({
       where: { id: imageId },
-      data : {  
-        order : 0, 
+      data: {
+        order: 0,
         isMain: true
       }
     });
@@ -167,7 +196,7 @@ const setMainImage = async (req, res) => {
     // reordeno las otras imagenes
 
     let orderCounter = 1;
-    
+
     for (const img of images) {
       if (img.id !== imageId) {
         await prisma.image.update({
@@ -178,7 +207,7 @@ const setMainImage = async (req, res) => {
       }
     }
 
-  
+
     // 4. Actualizar el profilePicture en la entidad principal
     await prisma[translatedEntity].update({
       where: { id },
@@ -209,7 +238,7 @@ const deleteImage = async (req, res) => {
     }
 
     // 2. Determinar a qué entidad pertenece
-    const entityKeys = ["productId", "userId", "clientId", "supplierId", "categoryId"];
+    const entityKeys = ["productId", "userId", "clientId", "supplierId", "categoryId", "storeId"];
     let entityKey = null;
     let entityId = null;
 
@@ -218,6 +247,22 @@ const deleteImage = async (req, res) => {
         entityKey = key;
         entityId = image[key];
         break;
+      }
+    }
+
+    // 2.5 Verificar propiedad antes de eliminar (Anti-IDOR)
+    if (!req.user.isSistema && entityKey && entityId) {
+      const entityModelForCheck = entityKey === 'categoryId' ? 'categories' : entityKey.replace('Id', '');
+      if (entityModelForCheck === 'user') {
+        if (req.user.rbacRole === 'ADMINISTRADOR') {
+          const targetUser = await prisma.user.findFirst({ where: { id: entityId, storeId: req.user.storeId } });
+          if (!targetUser) return res.status(403).json({ message: 'No tenés permiso para eliminar imágenes de este usuario.' });
+        } else {
+          if (entityId !== req.user.id) return res.status(403).json({ message: 'Solo podés eliminar tu propio avatar.' });
+        }
+      } else {
+        const ownerEntity = await prisma[entityModelForCheck].findFirst({ where: { id: entityId, storeId: req.user.storeId } });
+        if (!ownerEntity) return res.status(403).json({ message: 'No tenés permiso para eliminar imágenes de esta entidad.' });
       }
     }
 

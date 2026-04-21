@@ -1,4 +1,5 @@
 const clientServices = require('../services/clientServices');
+const excelService = require('../services/excelService');
 
 
 const createClient = async (req, res) => {
@@ -58,6 +59,38 @@ const toggleActiveStatus = async (req, res) => {
   }
 };
 
+const exportClients = async (req, res) => {
+  try {
+    const clients = await clientServices.getAll(req.user);
+    
+    const columns = [
+      { header: 'DNI/CUIT', key: 'taxId', width: 15 },
+      { header: 'Apellido', key: 'lastName', width: 20 },
+      { header: 'Nombre', key: 'firstName', width: 20 },
+      { header: 'Email', key: 'email', width: 25 },
+      { header: 'Teléfono', key: 'phoneNumber', width: 15 },
+      { header: 'Estado', key: 'status', width: 15 }
+    ];
 
+    const data = clients.map(c => ({
+      taxId: c.dni || c.cuit || 'N/A',
+      lastName: c.lastName,
+      firstName: c.firstName,
+      email: c.email || 'N/A',
+      phoneNumber: c.phoneNumber || 'N/A',
+      status: c.isActive ? 'Activo' : 'Baja'
+    }));
 
-module.exports = { createClient, getAllClients, getClientDetails, updateClient, toggleActiveStatus };
+    await excelService.generateExcel({
+      res,
+      filename: `clientes_${new Date().toISOString().split('T')[0]}.xlsx`,
+      worksheetName: 'Clientes',
+      columns,
+      data
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { createClient, getAllClients, getClientDetails, updateClient, toggleActiveStatus, exportClients };

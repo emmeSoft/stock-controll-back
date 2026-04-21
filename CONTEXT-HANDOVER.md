@@ -1,0 +1,580 @@
+# CONTEXTO DE TRASPASO: Motor de Descuentos Universal
+
+Este documento sirve para sincronizar el estado del proyecto entre asistentes de IA. Estamos en medio de una refactorización crítica del motor de descuentos.
+
+## 1. El Objetivo
+Evolucionar el motor de descuentos de una arquitectura de "Silos" (8 tipos rígidos: QUANTITY, CASH_PAYMENT, CLIENT, SPECIAL_DATE, PRODUCT, CATEGORY, MIN_AMOUNT, LIMITED_STOCK) a un sistema de **Reglas Universales Componibles (AND Lógico)**.
+
+## 2. Arquitectura y Axiomas (Decisiones Firmes)
+
+### Capas (Layers)
+- **ITEM_LEVEL**: Reglas con `target` definido (productos/categorías). Gana la de mayor impacto monetario por producto.
+- **ORDER_LEVEL**: Reglas globales (sin target). Gana la de mayor impacto sobre el subtotal residual.
+
+### Combinabilidad
+- Se permite **1 regla ITEM + 1 regla ORDER** por ítem.
+- Prohibido sumar dos de la misma capa.
+
+### Evaluación Secuencial
+1. ITEM se aplica primero
+2. ORDER aplica sobre residualSubtotal
+
+---
+
+## 3. Fases de Implementación (CORREGIDAS según plan)
+
+### Fase 0: Paralelismo Total ✅ COMPLETA
+- Motor universal creado en paralelo al legacy
+- Archivos: `services/discountEngine/universal/{calculator.js, evaluator.js, index.js}`
+- Sistema legacy intacto, sin cambios
+
+### Fase 1: Schema + Validación Dual ✅ COMPLETA
+- Schema Prisma extendido con `engineVersion` y `conditionsUniversal`
+- Validación dual: `validateConditionsDual(conditions, engineVersion, type)`
+- Tests passing: 6 casos cubriendo ITEM, ORDER, combos, maxUnits, vigencia, ticketConditions
+
+### Fase 2: Endpoint Único con Detección ✅ COMPLETA
+- Un solo endpoint `/api/discounts/preview`
+- Controller detecta `engineVersion` por regla
+- Ejecuta ambos motores (legacy + universal)
+- Combina resultados (merge)
+- Soporte para reglas mixtas simultáneamente
+- CRUD de descuentos soporta reglas universales (derivación dinámica de layer)
+
+### Fase 3: Frontend Modal Híbrido ✅ COMPLETA
+- Un solo modal en `/discounts` (`DiscountFormModal.jsx`)
+- Detecta `engineVersion` de la regla
+- Renderiza UI legacy (tipos) o UI universal (toggles/RuleBuilder) según corresponda
+- Soporte para creación de reglas universales con Rule Builder
+
+### Fase 4: Deprecación y Cleanup 🚧 EN PROCESO
+- Migrar todas las reglas restantes a `universal` (Bloqueado en Task 4.1)
+- Deprecar campos `conditions`, `type`, `layer`
+- Eliminar evaluadores legacy
+- Limpieza de código
+
+---
+
+## 4. Estructura de Datos
+
+### Schema Prisma (DiscountRule)
+```prisma
+type          DiscountType    // legacy: 8 tipos
+conditions    Json            // legacy: shape por tipo
+engineVersion String @default("legacy")  // "legacy" | "universal"
+conditionsUniversal Json?    // universal: estructura unificada
+layer         DiscountLayer // legacy: inferido del tipo
+```
+
+### conditionsUniversal (JSON)
+```javascript
+{
+  target: { 
+    productIds: string[],   // IDs de productos específicos (ITEM)
+    categoryIds: string[]  // IDs de categorías (ITEM)
+  },                        // null = ORDER_LEVEL
+  ticketConditions: { 
+    paymentMethods: string[],  // ["CASH", "TARJETA"]
+    minAmount: number,        // monto mínimo para aplicar
+    allClients: boolean,      // aplica a todos
+    clientIds: string[]       // clientes específicos
+  },
+  itemConditions: { 
+    minQuantity: number       // cantidad mínima de unidades
+  },
+  constraints: { 
+    maxUnits: number          // unidades máximas con descuento
+  }
+}
+```
+
+---
+
+## 5. Archivos Creados/Modificados
+
+### Backend - Motor Universal
+| Archivo | Descripción |
+|---------|-------------|
+| `services/discountEngine/universal/calculator.js` | simulateMonetaryImpact, applyDiscount, calculateResidualSubtotal |
+| `services/discountEngine/universal/evaluator.js` | filterByVigency, splitByLayer, evaluateUniversal |
+| `services/discountEngine/universal/index.js` | runUniversalPipeline (entry point) |
+
+### Backend - Validación
+| Archivo | Descripción |
+|---------|-------------|
+| `services/discountEngine/validators.js` | Agregado validateConditionsDual() |
+
+### Backend - Schema
+| Archivo | Descripción |
+|---------|-------------|
+| `prisma/schema.prisma` | Campos engineVersion y conditionsUniversal |
+
+### Tests
+| Archivo | Descripción |
+|---------|-------------|
+| `tests/discountEngine/universal.test.js` | 6 casos de prueba pasando |
+
+---
+
+## 6. Estado de Tasks (tasks.md)
+
+```
+Fase 0: Paralelismo Total
+- [x] 0.1 Crear directorio universal/
+- [x] 0.2 Crear calculator.js
+- [x] 0.3 Crear evaluator.js
+- [x] 0.4 Crear index.js
+- [x] 0.5 Verificar sistema legacy intacto
+
+Fase 1: Campo engineVersion + Motor Universal
+- [x] 1.1 Campo engineVersion en schema
+- [x] 1.2 Campo conditionsUniversal en schema
+- [x] 1.3 Migración DB ejecutada
+- [x] 1.4 Validación dual implementada
+- [x] 1.5 Tests pasando (6 casos)
+- [x] 1.6 Documentación JSDoc
+
+Fase 2: Endpoint Único con Detección ✅ COMPLETA
+- [x] 2.1 Modificar controller para detectar engineVersion
+- [x] 2.2 Ejecutar ambos motores
+- [x] 2.3 Merge de resultados
+- [x] 2.4 CRUD: Soporte para reglas universales (create/update)
+
+Fase 3: Frontend Modal Híbrido ✅ COMPLETA
+- [x] 3.1 Detectar engineVersion en modal
+- [x] 3.2 UI adaptativa legacy/universal (UniversalRuleBuilder.jsx)
+
+Fase 4: Cleanup 🚧 EN PROCESO
+- [/] 4.1 Migrar reglas restantes (Script `scripts/migrate-discount-rules.js` creado pero fallando)
+- [ ] 4.2 Deprecar campos legacy
+- [ ] 4.3 Eliminar código viejo
+```
+
+---
+
+## 7. Tests Pasando
+
+1. **ITEM only** - regla con target de productos
+2. **ORDER only** - regla sin target (global)
+3. **ITEM + ORDER combinados** - ambos aplicando
+4. **maxUnits** - limitaciones de unidades
+5. **Vigencia temporal** - startsAt/endsAt
+6. **ticketConditions** - paymentMethods, minAmount, clientIds
+
+---
+
+## 8. Limitaciones Conocidas
+
+- **maxUnits**: Aplica por item, no global. Mejora pendiente para futura iteración.
+- **MAXIMIZE_DISCOUNT**: Versión actual aplica a las primeras unidades. La versión "las más caras" queda pendiente.
+
+---
+
+## 10. Plan Corregido — Implementación Incremental
+
+### Fase 0: Paralelismo Total (SIN CAMBIOS EN PROD)
+**Objetivo:** Construir el sistema nuevo sin romper el viejo
+
+| Componente | Acción | Convive con viejo |
+|------------|--------|-------------------|
+| Motor | Crear `UniversalEvaluator` en paralelo | ✅ Ambos accesibles |
+| Schema | Preparar campo `conditionsUniversal` | ✅ `conditions` sigue igual |
+| Frontend | Crear nuevo modal como alternativa | ✅ Viejo sigue funcionando |
+
+---
+
+### Fase 1: Campo engineVersion + Motor Universal ✅ COMPLETA
+
+#### 1.1 Extender Schema
+```prisma
+engineVersion String @default("legacy")  // "legacy" | "universal"
+conditionsUniversal Json?  // { target, ticketConditions, itemConditions, constraints }
+```
+
+#### 1.2 Motor Universal
+- Crear `UniversalEvaluator` en `services/discountEngine/universal/`
+
+#### 1.3 Validación Dual (backend)
+- El validador detecta formato por campo no nulo
+
+---
+
+### Fase 2: Endpoint Único con Detección ⏳ PENDIENTE
+
+#### 2.1 Controller Inteligente
+- Fetch rules con ambos formatos
+- Separar por versión (legacy vs universal)
+- Ejecutar ambos motores
+- Combinar resultados (merge interno)
+
+#### 2.2 Migración de Reglas Existentes
+- Script convierte reglas al nuevo formato
+
+---
+
+### Fase 3: Frontend Modal Híbrido ⏳ PENDIENTE
+
+#### 3.1 Detección en Modal
+- Detectar `engineVersion` de la regla
+- Renderizar UI legacy (tipos) o UI universal (toggles)
+
+#### 3.2 Toggle de Preferencias (settings)
+- Setting global `preferredEngine: "legacy" | "universal"`
+
+---
+
+### Fase 4: Deprecación y Limpieza ⏳ PENDIENTE
+
+#### 4.1 Migración Masiva
+- Convertir todas las reglas restantes a `engineVersion: "universal"`
+
+#### 4.2 Deprecación de Campos Viejos
+- `conditions` → nullable + warning
+- `type` (enum) → ya no usado
+- `layer` → inferido del target
+
+#### 4.3 Limpieza de Código
+- Eliminar evaluadores legacy
+
+---
+
+### Resumen por Fases
+
+| Fase | Scope | Downtime | Riesgo |
+|------|-------|----------|--------|
+| **F0** | Motor nuevo paralelo | 0 | Ninguno |
+| **F1** | Schema con engineVersion + motor | 0 | Schema nuevo sin datos |
+| **F2** | Endpoint único con merge | Low | Lógica merge crítica |
+| **F3** | Frontend híbrido | 0 | UI dual compleja |
+| **F4** | Cleanup | Medium | Breaking final |
+
+---
+
+### Cambios Clave vs Plan Anterior
+
+| Antes (inconsistente) | Después (corregido) |
+|----------------------|-------------------|
+| `conditionsUniversal` + `target` separados | `target` dentro de `conditionsUniversal` |
+| Flag global `useUniversalRules` | Campo `engineVersion` por regla |
+| Endpoint `/preview-universal` duplicado | Un solo endpoint con merge interno |
+| Ruta `/discounts/universal` duplicada | Modal híbrido en `/discounts` |
+
+---
+
+### MVP (F0 → F1)
+
+Versión mínima funcional:
+1. Campo `engineVersion` agregado al schema
+2. Campo `conditionsUniversal` con estructura completa
+3. Motor Universal funcionando en paralelo
+4. Validación dual detectando formato por campo no nulo
+
+---
+
+## 11. Estado Actual y Tarea Incompleta (Handover Crítico)
+
+### El Bloqueo: Task 4.1 (Migración Masiva)
+Estábamos intentando validar el script `scripts/migrate-discount-rules.js` para migrar las reglas legacy existentes al nuevo engine universal.
+- **Qué se hizo**: El script está 100% programado con la lógica de mapeo para los 8 tipos de descuento.
+- **Problema**: El dry-run del script falla con un error de Prisma: `AND?: DiscountRuleWhereInput[] | undefined`.
+- **Ubicación del error**: `migrate-discount-rules.js:158:23`.
+- **Causa probable**: El cliente de Prisma no está reconociendo correctamente el filtro sobre `engineVersion: 'legacy'`. Puede requerir un `npx prisma generate` o hay un mismatch estructural en el objeto `where` del script.
+
+### Siguientes Pasos Inmediatos para la próxima IA:
+1. Arreglar el query de Prisma en `scripts/migrate-discount-rules.js`.
+2. Ejecutar la migración con el flag `--execute` tras verificar el dry-run.
+3. Avanzar con F4.2 (Schema cleanup) y F4.3 (Borrado de evaluadores legacy).
+
+---
+
+## 📋 Sesión de Trabajo — 12 Abril 2026
+
+### Estado: COMPLETA ✅
+
+### Cambios Completados
+
+| Cambio | Estado | Notas |
+|--------|--------|-------|
+| **Fase 4 Universal Discount Rules** | ✅ COMPLETO | Migración masiva, campos legacy deprecados, código legacy eliminado |
+| **Modal descuentos: scroll interno** | ✅ COMPLETO | max-w-3xl (800px), max-height 85vh, scroll solo si overflow |
+| **Modal: opción legacy oculta** | ✅ COMPLETO | engineVersion default = 'universal', toggle ocultado |
+| **Modal: cierre con Escape/click outside** | ✅ COMPLETO | Todos los modales heredan comportamiento |
+| **Payment methods válidos** | ✅ COMPLETO | Solo Efectivo, Tarjeta, Transferencia |
+| **Tarjeta descuentos en Reportes** | ✅ COMPLETO | Agregada en Estadistics.jsx |
+| **DB Schema: descuentos** | ✅ COMPLETO | Sincronizado, campos percentage, startsAt, endsAt |
+| **Relaciones Prisma: store, creator** | ✅ COMPLETO | Arreglado en discountService.js |
+| **Botón eliminar descuento** | ✅ COMPLETO | En modal edición, con ConfirmModal |
+| **Dropdown clientes: nombres completos** | ✅ COMPLETO | firstName + lastName |
+| **Dropdown: cerrar al seleccionar** | ✅ COMPLETO | setQuery('') + setIsOpen(false) |
+| **Dropdown: keyboard navigation** | ✅ COMPLETO | Flechas + Enter + Escape, highlight visual |
+
+### Pendientes / known issues
+
+- Ninguno marcado como pendiente
+
+---
+
+## 7. Trabajos Realizados - 14 Abril 2026
+
+### Bug Fixes Críticos
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Error: filter undefined** | ✅ ARREGLADO | salesServices no pasaba rules al motor universal |
+| **Error: payment mismatch** | ✅ ARREGLADO | Frontend ahora envía amount para validar vs computedTotal |
+| **Error: AppliedDiscount type null** | ✅ ARREGLADO | Schema ahora permite type nullable |
+
+### Nuevas Funcionalidades
+
+| Feature | Estado | Descripción |
+|---------|--------|-------------|
+| **Modal Calcular Descuentos** | ✅ IMPLEMENTADO | Nuevo flujo: botón → modal preview → confirmar |
+
+### Detalles de Implementación
+
+#### Bug Fix 1: Error "Cannot read properties of undefined (reading 'filter')"
+- **Causa**: salesServices.js llamaba runPipeline sin pasar rules como segundo parámetro
+- **Solución**: 
+  - Modificado salesServices.js para implementar patrón dual-engine (mismo que discountService.preview)
+  - Fetch de reglas → splitRulesByEngine → ejecutar ambos motores → merge results
+
+#### Bug Fix 2: Error de validación de payment ($1307.25 vs $915.08)
+- **Causa**: Backend comparaba paymentBreakdown con finalTotal (con descuentos), frontend enviaba subtotal
+- **Solución**:
+  - Frontend ahora envía `amount: total` (subtotal sin descuentos)
+  - Backend valida ese monto contra computedSubtotal (mismos términos)
+
+#### Bug Fix 3: AppliedDiscount.type null
+- **Causa**: Prisma schema exigía type obligatorio, pero reglas universales pueden no tener DiscountType
+- **Solución**:
+  - Schema: `type DiscountType?` (nullable)
+  - Migración aplicada: 20260414152247_make_applied_discount_type_nullable
+  - Helper normalizeAppliedDiscount() en salesServices para completar datos faltantes
+
+#### Nueva Feature: Modal de Confirmación de Ventas
+- **Flujo nuevo**:
+  1. Usuario hace click en "CALCULAR DESCUENTOS"
+  2. Se abre DiscountSummaryModal con:
+     - Lista de productos (nombre, cantidad, precio, subtotal)
+     - Descuentos aplicados (nombre, monto)
+     - Subtotal / Descuento / Total a Pagar
+  3. Click en "REALIZAR VENTA"
+  4. Modal se cierra, se ejecuta la venta
+- **Archivos nuevos**:
+  - `src/components/Modals/DiscountSummaryModal.jsx` (NUEVO)
+  - `src/pages/sales/NewSale.jsx` (modificado)
+- **Backend**:
+  - mergeEngineResults ahora recibe allRules para incluir nombre del descuento
+
+---
+
+## 8. Trabajos Realizados - 16 Abril 2026
+
+### 8.1 Campo "Combinable" en Modal de Descuentos
+- Agregado dropdown "Combinable" / "No combinable" en DiscountFormModal.jsx
+- Backend: schema ya tenía campo isCombinable
+- Motor: calculator.js ahora respeta isCombinable para sumar descuentos combinables
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Dropdown isCombinable** | ✅ COMPLETO | En modal de creación/edición de descuentos |
+| **Motor combina descuentos** | ✅ COMPLETO | Si es combinable=true, se suma con otros |
+
+### 8.2 Botón Habilitar/Deshabilitar Descuentos
+- Botón para activar/desactivar descuentos sin eliminar
+- Modal de confirmación antes de ejecutar
+- Refresca lista después del cambio
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Botón Toggle** | ✅ COMPLETO | En modal de edición de descuento |
+| **ConfirmModal** | ✅ COMPLETO | Solicita confirmación antes de cambiar estado |
+| **Refresh automático** | ✅ COMPLETO | Recarga lista después de habilitar/deshabilitar |
+
+### 8.3 Ticket de Descuentos Mejorado
+- Formato reorganizado y más claro
+- Porcentaje + Nombre + Monto por producto
+- Descuentos globales al final
+- "USTED AHORRÓ" personalizado con nombre del cliente
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Formato visual** | ✅ COMPLETO | En DiscountSummaryModal y SaleDetail |
+| **Personalizado** | ✅ COMPLETO | Muestra nombre del cliente ("Juan" o "Usted") |
+| **Subtotal parcial** | ✅ COMPLETO | Muestra después de descuentos por producto |
+
+### 8.4 Fix Tickets Inmutables
+- Problema: Los tickets mostraban nombres actuales de descuentos en vez de los originales
+- Causa: JOIN dinámico a DiscountRule al consultar
+- Solución: Quitar include de discountRule, usar campo `reason` guardado
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **Tickets inmutables para descuentos** | ✅ COMPLETO | cajaServices.js ya no hace JOIN a DiscountRule |
+
+### Detalles de Implementación
+
+#### Fix 1: isCombinable en Modal
+- **Frontend**: DiscountFormModal.jsx - dropdown con opciones "Combinable" / "No combinable"
+- **Backend**: discountService.js - enrichDiscount incluye percentage
+- **Motor**: calculator.js - nueva función resolveOrderDiscounts que suma combinables
+
+#### Fix 2: Botón Toggle
+- **Frontend**: DiscountFormModal.jsx + DiscountsMainPage.jsx - estados handlers, ConfirmModal
+- **Backend**: activateDiscount/deactivateDiscount endpoints
+
+#### Fix 3: Formato de Ticket
+- **Frontend**: DiscountSummaryModal.jsx y SaleDetail.jsx reformateados
+- Estructura: Cliente → Productos con descuentos → Subtotal → Globales → Métodos → Total
+- Nueva sección "USTED AHORRÓ" aparece al final
+
+#### Fix 4: Tickets Inmutables
+- **Archivo**: stock-controll-back/services/cajaServices.js
+- Cambio: `appliedDiscounts: { include: { discountRule: true } }` → `appliedDiscounts: true`
+- Importante: Esto NO afecta productos ni clientes (queda para futura iteración)
+
+### Archivos Modificados
+- **stock-controll (Frontend)**:
+  - `src/components/Discounts/DiscountFormModal.jsx`
+  - `src/pages/Discounts/DiscountsMainPage.jsx`
+  - `src/components/Modals/DiscountSummaryModal.jsx`
+  - `src/pages/sales/SaleDetail.jsx`
+- **stock-controll-back (Backend)**:
+  - `services/discountEngine/universal/calculator.js`
+  - `services/discountService.js`
+  - `services/cajaServices.js`
+
+---
+
+*Última actualización: 16 de Abril 2026*
+*Estado: Funcionalidades de descuentos completadas*
+
+### Mejoras en Modal de Descuentos
+
+| Tema | Estado | Descripción |
+|------|--------|-------------|
+| **DiscountSummaryModal: porcentaje + nombre** | ✅ COMPLETO | Cada descuento muestra: "15% Descuento Por Cantidad -$500" |
+| **DiscountSummaryModal: descuento por producto** | ✅ COMPLETO | Descuentos ITEM aparecen debajo de su producto, ORDER en sección separada |
+| **SaleDetail: mismos datos que preview** | ✅ COMPLETO | Modal de venta exitosa ahora muestra nombre, porcentaje y monto de descuentos |
+
+### Detalles de Implementación
+
+#### Fix 1: DiscountSummaryModal - porcentaje y nombre
+- **Problema**: Solo mostraba nombre genérico
+- **Solución**:
+  - Backend: `enrichDiscount` en `discountService.js` ahora incluye `percentage`
+  - Frontend: badge de porcentaje adelante del nombre, descuento debajo de producto
+
+#### Fix 2: SaleDetail - mostrar descuentos con nombre y porcentaje
+- **Problema**: Mostraba "Descuento cmo0s4fn" (ID en vez de nombre)
+- **Causa**: `mergeEngineResults` no recibía `allRules` en salesServices.js
+- **Solución**:
+  - Modificado `salesServices.js` línea 173: ahora pasa `allRules` al merge
+  - `getById` también enriquecido para traer `discountRule` con include
+  - Frontend: mismo patrón que DiscountSummaryModal
+
+### Archivos Modificados
+- `stock-controll-back/services/discountService.js` — enrichDiscount agrega percentage
+- `stock-controll-back/services/salesServices.js` — mergeEngineResults recibe allRules, getById incluye discountRule
+- `stock-controll/src/components/Modals/DiscountSummaryModal.jsx` — descuentos por producto + porcentaje
+- `stock-controll/src/pages/sales/SaleDetail.jsx` — mismo formato que DiscountSummaryModal
+
+---
+
+## 9. Auditoría de Seguridad y Hardening — 18 Abril 2026
+
+### Estado: COMPLETA ✅
+
+Se realizó un ciclo completo de auditoría de seguridad (Security Audit 2026-04-18) para blindar el sistema contra IDOR, elevación de privilegios no autorizada y ataques de inyección/spoofing en archivos.
+
+### Cambios Completados
+
+| Vulnerabilidad / Feature | Estado | Descripción |
+| :--- | :--- | :--- |
+| **IDOR en Imágenes (HIGH-002)** | ✅ RESUELTO | Validación de propiedad (storeId) en `imageController.js`. Reglas: SISTEMA (Global), ADMIN (Tienda), VENDEDOR (Solo avatar propio). |
+| **Sudo RBAC Check (HIGH-004)** | ✅ RESUELTO | `verifySudo` ahora valida que el rol sea ADMIN o SISTEMA ANTES de autenticar contraseña. |
+| **Tope Descuento (MED-002)** | ✅ RESUELTO | `maxDiscountPct` (default 80%) integrado en el merge de motores. Clipeo automático (cap) y advertencias en el creador. |
+| **Seguridad de Uploads (MED-003)** | ✅ BASTIONADO | Doble validación en `upload.js`: MimeType + Extensión consistente (Anti-spoofing). |
+| **CORS Policy (MED-004)** | ✅ DINÁMICO | Orígenes movidos a `.env` (`ALLOWED_ORIGINS`). Helmet y CORS configurados dinámicamente. |
+| **Limpieza de Logs (MED-001)** | ✅ LIMPÌO | Eliminados logs con datos financieros sensibles en `salesServices`, `clientServices` y `categoriesServices`. |
+
+### Detalles de Implementación
+
+#### Fix 1: Blindaje IDOR en Imágenes
+- **Cambio**: Inyectada la función `checkEntityOwnership` en los métodos de `imageController.js`.
+- **Impacto**: Protege Productos, Categorías, Usuarios y Tiendas de manipulaciones cruzadas por ID.
+
+#### Fix 2: Max Discount Cap Universal
+- **Backend**: `discountService.mergeEngineResults` clipea el subtotal final usando el `maxDiscountPct` configurado en la tienda.
+- **Configuración**: `storesServices.js` solo permite modificar este valor a usuarios con rol `SISTEMA`.
+- **Frontend**: Nuevo campo condicional en `Stores.jsx` para gestionar el tope.
+
+#### Fix 3: CORS y CSP Dinámicos
+- **Archivo**: `index.js` consume `ALLOWED_ORIGINS` desde el entorno.
+- **Helmet**: Política `connectSrc` y `imgSrc` (Cloudinary) relajada solo para los dominios de confianza.
+
+---
+
+*Última actualización: 18 de Abril 2026*
+*Estado: Auditoría de Seguridad finalizada. Sistema endurecido para producción.*
+
+---
+
+## 10. Estabilización, Blindaje y Refactor de POS — 19/20 Abril 2026
+
+### Estado: COMPLETA ✅
+
+### Cambios Completados
+
+| Tema | Estado | Descripción |
+| :--- | :--- | :--- |
+| **Fuga en Tope de Tienda** | ✅ RESUELTO | Implementación del **Impacto Atómico**. El pre-cálculo de límites se hace siempre sobre el precio base crudo, evitando que los descuentos secuenciales se encojan en la cascada y evadan el tope de la tienda. |
+| **Ordenamiento Determinista** | ✅ RESUELTO | Todo el motor ordena bajo la tríada: 1. Preferencias Manuales > 2. Capa (ITEM luego ORDER) > 3. Prioridad (Impacto DESC). |
+| **UI de Modal Estabilizada** | ✅ RESUELTO | Se agregó scroll al modal, una sección colapsable (UX limpia) y se cambió la advertencia de 'Límite excedido' por la invitación a reglas 'Intercambiables'. |
+| **Sincronización Total de Pago** | ✅ RESUELTO | Frontend ahora extrae el `finalTotal` del preview y lo transfiere al `paymentBreakdown`, eliminando el desajuste de montos que rechazaba la venta, respetando la regla "Front no calcula". |
+| **Venta Final con Híbrido Manual** | ✅ RESUELTO | `NewSale.jsx` envía el `preferredRuleIds` y `excludedRuleIds` al registrar `post('/api/sales')` para que el backend coincida exactamente con las elecciones visuales del usuario. |
+| **Fix Prisma (Crashes en Caja)** | ✅ RESUELTO | Actualizada la sintaxis foránea a `connect: { id }` para `User` y `CashRegister` en aperturas de caja, cierres y movimientos manuales. Manejo de error graceful si el usuario no tiene `storeId`. |
+
+### Detalles de Implementación
+
+#### Fix 1: El Axioma de Impacto Atómico
+- **Backend (`discountService.js`)**: Se refactorizó la lógica en `mergeEngineResults`. Las reglas se iteran individualmente calculando su impacto sobre el monto original y crudo de la venta. Si la sumatoria sobrepasa el cap paramétrico, se descartan reglas enteras antes del cálculo en cascada real, logrando un 'Slot Management' matemático impecable.
+
+#### Fix 2: Sincronización POS
+- **Frontend (`NewSale.jsx`)**: Se modificó la variable original para que el total se derive de `netTotal`, alimentado estrictamente por el payload originado desde el backend vía `/preview`. Se agregó un listener de reactividad (`useEffect`) que blanquea el preview y el neto si cambian los componentes del carrito, forzando la consistencia real al vendedor.
+
+#### Fix 3: Crash de Caja y Relaciones de Prisma
+- **Servicios (`cajaServices.js`, `movimientosServices.js`)**: Adaptación de `create` y `update` para usar el patrón relacional nested de Prisma (ej. `openedByUser: { connect: { id: user.id } }`). Envoltura de checks anti-nulos que previenen 500s fatales en producción mediante un HTTP 400 amistoso informando al dev sobre la falta del selector de sucursal.
+
+---
+
+---
+
+## 11. Blindaje de Roles y Modernización de Etiquetas — 20 de Abril 2026 (Noche)
+
+### Estado: COMPLETO ✅
+
+### Cambios Realizados
+
+| Tema | Estado | Descripción |
+| :--- | :--- | :--- |
+| **RBAC Vendedores** | ✅ RESUELTO | Se habilitó la ruta `/products` para consulta. Se ocultaron botones de "Agregar", "Editar" y "Ajustar Stock" en Productos, Detalles y Descuentos para el rol `VENDEDOR`. |
+| **Sidebar UX** | ✅ RESUELTO | Agregados links directos a **Productos** y **Descuentos** para agilizar la operación diaria de todos los roles. |
+| **Migración Barcode** | ✅ RESUELTO | Reemplazo de la fuente `ConnectCode39` por **JsBarcode (Code 128)**. Mejora drástica en densidad horizontal (etiquetas más pequeñas) y estabilidad gráfica. |
+| **Limpieza de Deuda** | ✅ RESUELTO | Eliminación de `ConnectCode39.ttf` y `barcode.css`. El sistema ya no depende de la descarga de fuentes externas para imprimir. |
+
+### Detalles Técnicos de la Sesión
+
+#### Blindaje "View-Only" para Operativos
+- Se unificó el criterio de permisos en `Details.jsx`. Ahora el botón de edición está estrictamente reservado para `SISTEMA, ADMINISTRADOR, ENCARGADO`.
+- `GenericTableSection.jsx` ahora recibe la prop `createRoles` para filtrar el botón de creación desde el componente padre.
+
+#### Motor de Etiquetas Moderno (JsBarcode)
+- **Implementación**: Se instaló `jsbarcode` y se refactorizaron `Details.jsx` y `BarcodeSuccessModal.jsx`.
+- **Renderizado**: El sistema genera un canvas en memoria, extrae el `dataURL` y lo inyecta como una imagen en la ventana de impresión. Esto garantiza compatibilidad 1:1 entre lo que se ve en pantalla y lo que sale por la impresora térmica.
+- **Formato**: Se estandarizó el uso de **CODE 128**, lo que reduce el tamaño físico de la etiqueta significativamente sin cambiar los datos (mismos 9 dígitos de base).
+
+---
+
+*Última actualización: 20 de Abril 2026 (Cierre de Sesión)*
+*Estado: Roles estabilizados y sistema de etiquetado modernizado para producción.*

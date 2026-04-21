@@ -17,12 +17,14 @@ const createMovement = async (data, user) => {
 
     const movement = await prisma.cashMovement.create({
         data: {
-            storeId: user.storeId,
-            cashRegisterId: currentRegister.id,
-            userId: user.id,
+            store: { connect: { id: user.storeId } },
+            cashRegister: { connect: { id: currentRegister.id } },
+            user: { connect: { id: user.id } },
             type: type,
             amount: parseFloat(amount),
-            description: description || null,
+            description: user.isSimulating 
+                ? `${description || ''} (Simulada por SISTEMA)`.trim() 
+                : (description || null),
             reference: reference || null
         }
     });

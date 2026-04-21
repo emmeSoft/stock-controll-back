@@ -3,8 +3,299 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model store {
+  id             String         @id @default(cuid())
+  name           String
+  address        String?
+  phone          String?
+  profilePicture String?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  maxDiscountPct Float          @default(80)  // Tope global de descuentos por tienda (%)
+  cashMovements  CashMovement[]
+  cashRegisters  CashRegister[]
+  stockHistories StockHistory[]
+  categories     categories[]
+  clients        client[]
+  discountRules  DiscountRule[]
+  orders         order[]
+  payments       payment[]
+  products       product[]
+  suppliers      supplier[]
+  users          user[]
+  Image          Image[]
+}
+
+model user {
+  id                  String         @id @default(cuid())
+  storeId             String?
+  email               String         @unique
+  password            String
+  firstName           String
+  lastName            String
+  fullName            String?
+  phoneNumber         String
+  address             String
+  city                String
+  profilePicture      String?
+  // RBAC: relación a tabla Role
+  roleId              String
+  rbacRole            Role           @relation(fields: [roleId], references: [id])
+  isActive            Boolean        @default(true)
+  mustChangePassword  Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  cashMovements       CashMovement[]
+  closedCashRegisters CashRegister[] @relation("ClosedCashRegisters")
+  openedCashRegisters CashRegister[] @relation("OpenedCashRegisters")
+  createdDiscounts    DiscountRule[] @relation("DiscountCreator")
+  Image               Image[]
+  stockHistories      StockHistory[]
+  orders              order[]
+  payments            payment[]
+  store               store?         @relation(fields: [storeId], references: [id])
+
+  @@index([storeId])
+  @@index([roleId])
+}
+
+model client {
+  id             String    @id @default(cuid())
+  storeId        String
+  email          String
+  firstName      String
+  lastName       String
+  fullName       String?
+  dni            String
+  cuit           String?
+  phoneNumber    String
+  address        String
+  city           String
+  profilePicture String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  isActive       Boolean   @default(true)
+  Image          Image[]
+  store          store     @relation(fields: [storeId], references: [id])
+  orders         order[]
+  payments       payment[]
+}
+
+model supplier {
+  id             String   @id @default(cuid())
+  storeId        String
+  email          String?
+  firstName      String?
+  lastName       String?
+  fullName       String?
+  dni            String?
+  cuit           String?
+  phoneNumber    String?
+  address        String?
+  city           String?
+  profilePicture String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  isActive       Boolean  @default(true)
+  Image          Image[]
+  store          store    @relation(fields: [storeId], references: [id])
+}
+
+model order {
+  id               String            @id @default(cuid())
+  storeId          String
+  userId           String?
+  cashRegisterId   String?
+  clientId         String?
+  orderDate        DateTime          @default(now())
+  amount           Float
+  amoutPayed       Float             @default(0)
+  amoutToPaid      Float             @default(0)
+  discountTotal    Float?            @default(0)  // Suma total de descuentos aplicados
+  paymentMethod    String?
+  status           String            @default("pending")
+  statusPayment    String?           @default("pending")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  appliedDiscounts AppliedDiscount[]
+  orderPayments    OrderPayment[]
+  cashRegister     CashRegister?     @relation(fields: [cashRegisterId], references: [id])
+  client           client?           @relation(fields: [clientId], references: [id])
+  store            store             @relation(fields: [storeId], references: [id])
+  user             user?             @relation(fields: [userId], references: [id])
+  orderDetails     orderDetail[]
+}
+
+model categories {
+  id             String    @id @default(cuid())
+  storeId        String
+  name           String
+  description    String?
+  profilePicture String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  barcodePrefix  String?
+  isActive       Boolean   @default(true)
+  Image          Image[]
+  store          store     @relation(fields: [storeId], references: [id])
+  products       product[]
+
+  @@unique([storeId, barcodePrefix])
+}
+
+model product {
+  id             String         @id @default(cuid())
+  storeId        String
+  name           String
+  description    String?
+  price          Float
+  stock          Int            @default(0)
+  profilePicture String?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  barcode        String?
+  categoryId     String?
+  Image          Image[]
+  stockHistories StockHistory[]
+  orderDetails   orderDetail[]
+  category       categories?    @relation(fields: [categoryId], references: [id])
+  store          store          @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, barcode])
+}
+
+model orderDetail {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int      @default(1)
+  price     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  order     order    @relation(fields: [orderId], references: [id])
+  product   product  @relation(fields: [productId], references: [id])
+}
+
+model payment {
+  id            String   @id @default(cuid())
+  storeId       String
+  userId        String?
+  clientId      String?
+  amount        Float
+  sucursalId    String?
+  paymentDate   DateTime @default(now())
+  paymentMethod String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  client        client?  @relation(fields: [clientId], references: [id])
+  store         store    @relation(fields: [storeId], references: [id])
+  user          user?    @relation(fields: [userId], references: [id])
+}
+
+model setting {
+  id          String   @id @default(cuid())
+  storeId     String?
+  name        String
+  detail      String?
+  type        String
+  value       String?
+  code        String?
+  isActive    Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Image {
+  id           String      @id @default(cuid())
+  url          String
+  cloudinaryId String?
+  altText      String?
+  isMain       Boolean     @default(false)
+  order        Int?
+  clientId     String?
+  userId       String?
+  supplierId   String?
+  categoryId   String?
+  productId    String?
+  storeId      String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  category     categories? @relation(fields: [categoryId], references: [id])
+  client       client?     @relation(fields: [clientId], references: [id])
+  product      product?    @relation(fields: [productId], references: [id])
+  supplier     supplier?   @relation(fields: [supplierId], references: [id])
+  user         user?       @relation(fields: [userId], references: [id])
+  store        store?      @relation(fields: [storeId], references: [id])
+}
+
+model CashRegister {
+  id             String             @id @default(cuid())
+  storeId        String
+  openedByUserId String
+  closedByUserId String?
+  openingAmount  Float
+  closingAmount  Float?
+  expectedAmount Float?
+  difference     Float?
+  observation    String?
+  status         CashRegisterStatus @default(OPEN)
+  openedAt       DateTime           @default(now())
+  closedAt       DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  cashMovements  CashMovement[]
+  closedByUser   user?              @relation("ClosedCashRegisters", fields: [closedByUserId], references: [id])
+  openedByUser   user               @relation("OpenedCashRegisters", fields: [openedByUserId], references: [id])
+  store          store              @relation(fields: [storeId], references: [id])
+  orders         order[]
+}
+
+model CashMovement {
+  id             String       @id @default(cuid())
+  storeId        String
+  cashRegisterId String
+  userId         String
+  type           MovementType
+  amount         Float
+  description    String?
+  reference      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  cashRegister   CashRegister @relation(fields: [cashRegisterId], references: [id])
+  store          store        @relation(fields: [storeId], references: [id])
+  user           user         @relation(fields: [userId], references: [id])
+}
+
+model StockHistory {
+  id             String            @id @default(cuid())
+  storeId        String
+  productId      String
+  userId         String?
+  type           StockMovementType
+  previousStock  Int
+  movementAmount Int
+  currentStock   Int
+  description    String?
+  createdAt      DateTime          @default(now())
+  product        product           @relation(fields: [productId], references: [id])
+  store          store             @relation(fields: [storeId], references: [id])
+  user           user?             @relation(fields: [userId], references: [id])
+}
+
+model OrderPayment {
+  id            String   @id @default(cuid())
+  orderId       String
+  paymentMethod String
+  amount        Float
+  createdAt     DateTime @default(now())
+  order         order    @relation(fields: [orderId], references: [id])
 }
 
 enum CashRegisterStatus {
@@ -25,300 +316,168 @@ enum StockMovementType {
   INITIAL
 }
 
-enum Role {
-  SUPERADMIN
-  ADMIN
-  USUARIO
+// ============================================
+// RBAC - Role-Based Access Control
+// ============================================
+
+enum RoleType {
+  SISTEMA
+  ADMINISTRADOR
+  ENCARGADO
+  VENDEDOR
 }
 
-model store {
-  id        String   @id @default(cuid())
-  name      String
-  address   String?
-  phone     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  users         user[]
-  clients       client[]
-  suppliers     supplier[]
-  orders        order[]
-  products      product[]
-  categories    categories[]
-  payments      payment[]
-  cashRegisters CashRegister[]
-  cashMovements CashMovement[]
-  stockHistories StockHistory[]
-}
-
-model user {
-  id             String   @id @default(cuid())
-  storeId        String?
-  email          String   @unique
-  password       String
-  firstName      String
-  lastName       String
-  fullName       String?
-  phoneNumber    String
-  address        String
-  city           String
-  profilePicture String?
-  role           String   @default("USUARIO") // SUPERADMIN, ADMIN, USUARIO
-  isActive       Boolean  @default(true)
-  mustChangePassword Boolean  @default(true)
-  tempPassword   String?  // Guarda el PIN en texto plano solo hasta el primer login
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  store               store?         @relation(fields: [storeId], references: [id])
-  payments            payment[]
-  Image               Image[]
-  openedCashRegisters CashRegister[] @relation("OpenedCashRegisters")
-  closedCashRegisters CashRegister[] @relation("ClosedCashRegisters")
-  cashMovements       CashMovement[]
-  orders              order[]
-  stockHistories      StockHistory[]
-}
-
-model client {
-  id             String   @id @default(cuid())
-  storeId        String
-  email          String
-  firstName      String
-  lastName       String
-  fullName       String?
-  dni            String
-  cuit           String?
-  phoneNumber    String
-  address        String
-  city           String
-  profilePicture String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  isActive       Boolean  @default(true)
-
-  store    store     @relation(fields: [storeId], references: [id])
-  orders   order[]
-  payments payment[]
-  Image    Image[]
-}
-
-model supplier {
-  id             String   @id @default(cuid())
-  storeId        String
-  email          String?
-  firstName      String?
-  lastName       String?
-  fullName       String?
-  dni            String?
-  cuit           String?
-  phoneNumber    String?
-  address        String?
-  city           String?
-  profilePicture String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  isActive       Boolean  @default(true)
-
-  store store   @relation(fields: [storeId], references: [id])
-  Image Image[]
-}
-
-model order {
-  id             String   @id @default(cuid())
-  storeId        String
-  userId         String?
-  cashRegisterId String?
-  clientId       String?
-  orderDate      DateTime @default(now())
-  amount         Float
-  amoutPayed     Float    @default(0)
-  amoutToPaid    Float    @default(0)
-  paymentMethod  String?
-  status         String   @default("pending")
-  statusPayment  String?  @default("pending")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  store        store         @relation(fields: [storeId], references: [id])
-  user         user?         @relation(fields: [userId], references: [id])
-  cashRegister CashRegister? @relation(fields: [cashRegisterId], references: [id])
-  client       client?       @relation(fields: [clientId], references: [id])
-  orderDetails orderDetail[]
-  orderPayments OrderPayment[]
-}
-
-model categories {
-  id             String   @id @default(cuid())
-  storeId        String
-  name           String
-  description    String?
-  profilePicture String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  barcodePrefix  String?  @db.VarChar(3)
-  isActive       Boolean  @default(true)
-
-  store    store     @relation(fields: [storeId], references: [id])
-  products product[]
-  Image    Image[]
-  @@unique([storeId, barcodePrefix])
-
-}
-
-model product {
-  id             String   @id @default(cuid())
-  storeId        String
-  name           String
-  description    String?
-  price          Float
-  stock          Int      @default(0)
-  profilePicture String?
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  barcode        String?  @db.VarChar(9)
-  categoryId     String?
-
-  store        store         @relation(fields: [storeId], references: [id])
-  category     categories?   @relation(fields: [categoryId], references: [id])
-  orderDetails orderDetail[]
-  Image        Image[]
-  stockHistories StockHistory[]
-
-  @@unique([storeId, barcode])
-}
-
-model orderDetail {
-  id        String   @id @default(cuid())
-  orderId   String
-  productId String
-  quantity  Int      @default(1)
-  price     Float
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  order   order   @relation(fields: [orderId], references: [id])
-  product product @relation(fields: [productId], references: [id])
-}
-
-model payment {
-  id            String   @id @default(cuid())
-  storeId       String
-  userId        String?
-  clientId      String?
-  amount        Float
-  sucursalId    String?
-  paymentDate   DateTime @default(now())
-  paymentMethod String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  store  store   @relation(fields: [storeId], references: [id])
-  user   user?   @relation(fields: [userId], references: [id])
-  client client? @relation(fields: [clientId], references: [id])
-}
-
-model setting {
-  id          String   @id @default(cuid())
-  storeId     String?
-  name        String
-  detail      String?
-  type        String
-  value       String?
-  code        String?
-  isActive    Boolean  @default(true)
+model Role {
+  id          String           @id @default(cuid())
+  name        RoleType         @unique
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isSystem    Boolean          @default(false)
+  permissions PermissionRole[]
+  users       user[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 }
 
-model Image {
+model Permission {
+  id           String           @id @default(cuid())
+  name         String           @unique // ej: "sale.create", "caja.open"
+  description  String?
+  category     String           // ej: "USUARIOS", "VENTAS", "CAJA"
+  roles        PermissionRole[]
+  createdAt    DateTime         @default(now())
+}
+
+model PermissionRole {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+}
+
+// ============================================
+// Auditoría de RBAC
+// ============================================
+
+model RoleAudit {
   id            String   @id @default(cuid())
-  url           String
-  cloudinaryId  String?  // public_id de Cloudinary para poder eliminar el archivo
-  altText       String?
-  isMain        Boolean  @default(false)
-  order         Int?
-  clientId      String?
-  userId        String?
-  supplierId    String?
-  categoryId    String?
-  productId     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  client   client?     @relation(fields: [clientId], references: [id])
-  user     user?       @relation(fields: [userId], references: [id])
-  supplier supplier?   @relation(fields: [supplierId], references: [id])
-  category categories? @relation(fields: [categoryId], references: [id])
-  product  product?    @relation(fields: [productId], references: [id])
-}
-
-model CashRegister {
-  id             String             @id @default(cuid())
-  storeId        String
-  openedByUserId String
-  closedByUserId String?
-  openingAmount  Float
-  closingAmount  Float?
-  expectedAmount Float?
-  difference     Float?
-  observation    String?            @db.Text
-  status         CashRegisterStatus @default(OPEN)
-  openedAt       DateTime           @default(now())
-  closedAt       DateTime?
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-
-  store         store          @relation(fields: [storeId], references: [id])
-  openedByUser  user           @relation("OpenedCashRegisters", fields: [openedByUserId], references: [id])
-  closedByUser  user?          @relation("ClosedCashRegisters", fields: [closedByUserId], references: [id])
-  orders        order[]
-  cashMovements CashMovement[]
-}
-
-model CashMovement {
-  id             String       @id @default(cuid())
-  storeId        String
-  cashRegisterId String
-  userId         String
-  type           MovementType
-  amount         Float
-  description    String?
-  reference      String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  store        store        @relation(fields: [storeId], references: [id])
-  cashRegister CashRegister @relation(fields: [cashRegisterId], references: [id])
-  user         user         @relation(fields: [userId], references: [id])
-}
-
-model StockHistory {
-  id             String            @id @default(cuid())
-  storeId        String
-  productId      String
-  userId         String?
-  type           StockMovementType
-  previousStock  Int
-  movementAmount Int
-  currentStock   Int
-  description    String?           @db.Text
-  createdAt      DateTime          @default(now())
-
-  store          store             @relation(fields: [storeId], references: [id])
-  product        product           @relation(fields: [productId], references: [id])
-  user           user?             @relation(fields: [userId], references: [id])
-}
-
-model OrderPayment {
-  id            String   @id @default(cuid())
-  orderId       String
-  paymentMethod String
-  amount        Float
+  userId        String   // Usuario cuyo rol fue cambiado
+  previousRoleId String? // Rol anterior (null si es nuevo)
+  newRoleId     String   // Nuevo rol asignado
+  changedBy     String   // Usuario que realizó el cambio
+  reason        String?  // Razón del cambio
   createdAt     DateTime @default(now())
 
-  order order @relation(fields: [orderId], references: [id])
+  @@index([userId])
+  @@index([changedBy])
+}
+
+// ============================================
+// Motor de Descuentos
+// ============================================
+
+// DiscountType: enum cerrado.
+// Agregar un tipo nuevo = cambio de código + migración Prisma (intencional).
+enum DiscountType {
+  QUANTITY      // Por cantidad de unidades de un item    → Capa ITEM
+  CASH_PAYMENT  // Por pago 100% en efectivo              → Capa ORDER
+  CLIENT        // Por cliente específico o grupo         → Capa ORDER
+  SPECIAL_DATE  // Por fecha especial (Navidad, etc.)     → Capa ORDER
+  PRODUCT       // Por producto específico                → Capa ITEM
+  CATEGORY      // Por categoría de productos             → Capa ITEM
+  MIN_AMOUNT    // Por monto mínimo de compra             → Capa ORDER
+  LIMITED_STOCK // Promo limitada por unidades disponibles → Capa ITEM
+}
+
+// DiscountLayer: derivado del DiscountType en la capa de servicio.
+// NUNCA se acepta del request; siempre se calcula en el servidor.
+enum DiscountLayer {
+  ITEM   // Aplica a productos/items específicos del carrito
+  ORDER  // Aplica al total de la orden
+}
+
+// DiscountRule: configuración de una regla de descuento.
+model DiscountRule {
+  id            String          @id @default(cuid())
+  storeId       String
+  name          String
+  description   String?
+  percentage    Float          @default(0)  // Porcentaje de descuento de la regla
+
+  // Fechas de vigencia (para todas las reglas)
+  startsAt     DateTime?
+  endsAt       DateTime?
+
+  // ─── Legacy fields (DEPRECATED — usar conditionsUniversal) ───
+  // type: DEPRECATED. Nullable para backward-compat; nuevo desarrollo usa conditionsUniversal.
+  type          DiscountType?
+
+  // conditions: DEPRECATED. Migrado a conditionsUniversal.
+  conditions    Json?
+
+  // ─── Universal Discount Rules ─────────────────────────────────────
+  // Control por regla: "legacy" = 8 tipos rígidos, "universal" = campos composables
+  engineVersion     String         @default("legacy")
+  
+  // Estructura universal (convive con conditions para backward compatibility):
+  // {
+  //   target: { productIds: string[], categoryIds: string[] } | null,
+  //   ticketConditions: { paymentMethods: string[], minAmount: number, allClients: boolean, clientIds: string[] },
+  //   itemConditions: { minQuantity: number },
+  //   constraints: { maxUnits: number }
+  // }
+  conditionsUniversal Json?
+  // ─────────────────────────────────────────────────────────────────
+
+  priority      Int             @default(0)  // Mayor valor = se evalúa primero
+
+  // layer: DEPRECATED. Derivar del target en runtime (ITEM si tiene productIds/categoryIds, ORDER si no).
+  // Mantenido en schema por backward-compatibilidad con registros existentes.
+  layer         DiscountLayer?
+
+  // Combinabilidad: ITEM = competitiva (un ganador). ORDER = cooperativa (distintos suman).
+  isCombinable  Boolean         @default(true)
+  combinesWith  DiscountType[]  // Auto-generado según tipo; solo override restrictivo
+  maxPercentage Float?
+
+  // Contador atómico para LIMITED_STOCK. Incremented inside prisma.$transaction.
+  usedUnits     Int             @default(0)
+
+  isActive      Boolean         @default(true)
+  createdBy     String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  store            store             @relation(fields: [storeId], references: [id])
+  creator          user              @relation("DiscountCreator", fields: [createdBy], references: [id])
+  appliedDiscounts AppliedDiscount[]
+
+  @@index([storeId, isActive])
+  @@index([type])
+}
+
+// AppliedDiscount: registro inmutable de auditoría.
+// Un order puede tener N descuentos aplicados.
+// Los registros con amount = 0 NO se persisten (AXIOMA 13).
+model AppliedDiscount {
+  id                 String        @id @default(cuid())
+  orderId            String
+  discountRuleId     String
+  type               DiscountType? // Nullable para reglas universales (type puede ser null)
+  layer              DiscountLayer
+  percentage         Float         // Porcentaje efectivamente aplicado (post-tope)
+  amount             Float         // Monto $ descontado — siempre > 0 (AXIOMA 13)
+  productId          String?       // null si la capa es ORDER
+  discountedQuantity Int?          // Solo relevante para LIMITED_STOCK
+  reason             String        // Descripción legible del descuento aplicado
+  createdAt          DateTime      @default(now())
+
+  order        order        @relation(fields: [orderId], references: [id])
+  discountRule DiscountRule @relation(fields: [discountRuleId], references: [id])
+
+  @@index([orderId])
+  @@index([discountRuleId])
 }
