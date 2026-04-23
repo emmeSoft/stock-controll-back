@@ -145,8 +145,9 @@ const verifySudo = async (req, res) => {
 };
 
 const logout = async (req, res) => {
-  res.clearCookie('token');
-  res.clearCookie('sudo'); // Limpiamos también el sudo por las dudas
+  const options = buildCookieOptions(0);
+  res.clearCookie('token', options);
+  res.clearCookie('sudo', options);
   res.json({ message: 'Sesión cerrada correctamente' });
 };
 
