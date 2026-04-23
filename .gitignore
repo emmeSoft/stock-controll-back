@@ -54,3 +54,6 @@ coverage/
 
 # Build artifacts
 *.tgz
+
+
+createSistemaUser.js

@@ -6,11 +6,14 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const app = express();
 
+// Confiar en el proxy de Render para cookies seguras
+app.set('trust proxy', 1);
+
 app.use(cookieParser());
 
 // Configuración de Orígenes Permitidos
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',') 
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
   : ["http://localhost:5173", "http://localhost:5174"];
 
 // Middlewares de Seguridad
@@ -86,7 +89,7 @@ app.use(express.json());
 app.use(limiter); // Aplicar el limitador global
 
 // Rutas de autenticación con sus propios limitadores definidos en el router o aquí
-app.use('/api/auth', authRoutes); 
+app.use('/api/auth', authRoutes);
 
 app.use("/api/clients", clientRoutes);
 app.use("/api/user", employeesRoutes);
