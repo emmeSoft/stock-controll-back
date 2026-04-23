@@ -13,7 +13,7 @@ app.use(cookieParser());
 
 // Configuración de Orígenes Permitidos
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
+  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
   : ["http://localhost:5173", "http://localhost:5174"];
 
 // Middlewares de Seguridad
