@@ -131,12 +131,7 @@ const verifySudo = async (req, res) => {
     }
 
     // Seteamos una cookie de 'sudo' que dura 2 minutos
-    res.cookie('sudo', 'true', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 2 * 60 * 1000 // 2 minutos
-    });
+    res.cookie('sudo', 'true', buildCookieOptions(2 * 60 * 1000));
 
     res.json({ message: "Sudo mode activado" });
   } catch (error) {
