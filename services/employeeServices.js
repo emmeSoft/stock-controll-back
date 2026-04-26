@@ -53,20 +53,13 @@ const mapUserResponse = (userRecord) => {
 
 const normalizeUserData = async (dataEmployee, { keepEmptyStrings = false } = {}) => {
     const allowedFields = [
-        'name',
-        'fullName',
         'firstName',
         'lastName',
+        'fullName',
         'email',
-        'password',
         'phoneNumber',
         'address',
         'city',
-        'dni',
-        'cuit',
-        'description',
-        'price',
-        'stock',
         'profilePicture',
         'isActive'
     ];
