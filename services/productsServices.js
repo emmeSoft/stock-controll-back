@@ -73,8 +73,8 @@ const create = async (dataProduct, user) => {
         await prisma.stockHistory.create({
             data: {
                 store: { connect: { id: user.storeId } },
-                productId: response.id,
-                userId: user.id || null,
+                product: { connect: { id: response.id } },
+                user: user.id ? { connect: { id: user.id } } : undefined,
                 type: 'INITIAL',
                 previousStock: 0,
                 movementAmount: stock,
@@ -225,8 +225,8 @@ const update = async (id, dataProduct, user) => {
         await prisma.stockHistory.create({
             data: {
                 store: { connect: { id: existingProduct.storeId } },
-                productId: id,
-                userId: user.id || null,
+                product: { connect: { id: id } },
+                user: user.id ? { connect: { id: user.id } } : undefined,
                 type: 'MANUAL_ADJUSTMENT',
                 previousStock: existingProduct.stock,
                 movementAmount: difference,
@@ -294,9 +294,9 @@ const adjustStock = async (id, amount, description, user) => {
 
         await tx.stockHistory.create({
             data: {
-                storeId: existingProduct.storeId,
-                productId: id,
-                userId: user.id || null,
+                store: { connect: { id: existingProduct.storeId } },
+                product: { connect: { id: id } },
+                user: user.id ? { connect: { id: user.id } } : undefined,
                 type: 'MANUAL_ADJUSTMENT',
                 previousStock: existingProduct.stock,
                 movementAmount: amount,
