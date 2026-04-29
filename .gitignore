@@ -59,7 +59,11 @@ coverage/
 createSistemaUser.js
 
 openspec/
+
 .CONTEXT-HANDOVER.md
 .conflicts.txt
 .exploration.md
 scratch/
+check_db.js
+
+
