@@ -10,12 +10,14 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
-const prisma          = require('../db/database.prisma.js');
-const bcrypt          = require('bcrypt');
-const cajaServices    = require('./cajaServices');
-const discountService = require('./discountService');
-const { runPipeline } = require('./discountEngine');
+const prisma                 = require('../db/database.prisma.js');
+const bcrypt                 = require('bcrypt');
+const cajaServices           = require('./cajaServices');
+const discountService        = require('./discountService');
+const { runPipeline }        = require('./discountEngine');
 const { runUniversalPipeline } = require('./discountEngine/universal');
+const currentAccountServices = require('./currentAccountServices');
+
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers
@@ -92,6 +94,22 @@ const create = async (saleData, user) => {
     });
     if (client && client.isActive === false) {
       throw new Error('No se puede registrar la venta: El cliente seleccionado se encuentra dado de baja.');
+    }
+  }
+
+  // ── Validación de Cuenta Corriente ────────────────────────────
+  // Si algún pago usa 'CUENTA_CORRIENTE', verificar elegibilidad ANTES de la tx.
+  const hasCCPayment = (paymentBreakdown ?? []).some(p => p.method === 'CUENTA_CORRIENTE');
+  if (hasCCPayment) {
+    if (!clientId) {
+      throw new Error('El método de pago "Cuenta Corriente" solo puede usarse con un cliente seleccionado.');
+    }
+    // Verificar que el cliente tiene cuenta corriente ABIERTA en esta tienda
+    const ccAccount = await prisma.currentAccount.findFirst({
+      where: { clientId, storeId: effectiveStoreId, status: 'OPEN' },
+    });
+    if (!ccAccount) {
+      throw new Error('El cliente no tiene una cuenta corriente abierta en esta tienda.');
     }
   }
 
@@ -288,14 +306,35 @@ const create = async (saleData, user) => {
       0.01
     );
 
-    // SEGURIDAD: Validamos que lo cobrado coincida con lo que el motor calculó 
-    // como precio final (post-cap), siguiendo el axioma de que se cobra el 
-    // precio rebajado pero blindado por el tope de la tienda.
-    validatePayments(paymentBreakdown, computedFinalTotal);
+    // SEGURIDAD: Validamos que lo cobrado coincida con lo que el motor calculó
+    // EXCEPCIÓN: Si hay pago parcial por Cuenta Corriente, el total del breakdown
+    // incluye el monto CC (que se registra como deuda), por lo que la suma sigue
+    // siendo igual al total. Solo se omite la validación si hay CC puro (paidAmount=0).
+    const ccBreakdown  = paymentBreakdown.find(p => p.method === 'CUENTA_CORRIENTE');
+    const ccAmount     = ccBreakdown ? ccBreakdown.amount : 0;
+    const cashPaid     = parseFloat((computedFinalTotal - ccAmount).toFixed(2));
 
-    const paymentMethodSummary = paymentBreakdown.length > 1
-      ? 'COMBINADO'
-      : paymentBreakdown[0].method;
+    if (!hasCCPayment) {
+      // Venta normal: suma total debe coincidir exactamente
+      validatePayments(paymentBreakdown, computedFinalTotal);
+    } else {
+      // CC: solo validamos los métodos no-CC (dinero real) suman lo correcto
+      const nonCCPayments = paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE');
+      const nonCCTotal    = nonCCPayments.reduce((s, p) => s + p.amount, 0);
+      if (Math.abs(nonCCTotal - cashPaid) > Math.max(0.01, cashPaid * 0.001)) {
+        throw new Error(
+          `Los medios de pago no CC ($${nonCCTotal.toFixed(2)}) no coinciden con el saldo a abonar ($${cashPaid.toFixed(2)}).`
+        );
+      }
+    }
+
+    const paymentMethodSummary = hasCCPayment
+      ? (paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE').length > 0 ? 'COMBINADO' : 'CUENTA_CORRIENTE')
+      : (paymentBreakdown.length > 1 ? 'COMBINADO' : paymentBreakdown[0].method);
+
+    const orderStatusPayment = hasCCPayment && ccAmount > 0
+      ? (cashPaid === 0 ? 'pending' : 'partial')
+      : 'paid';
 
     // ── PASO 7: Crear la orden con totales del motor ──────────────
     const order = await tx.order.create({
@@ -305,11 +344,12 @@ const create = async (saleData, user) => {
         cashRegisterId: currentRegister.id,
         clientId:       clientId || null,
         amount:         computedFinalTotal,       // Motor, no frontend
-        amoutPayed:     computedFinalTotal,
+        amoutPayed:     parseFloat(cashPaid.toFixed(2)),
+        amoutToPaid:    parseFloat(ccAmount.toFixed(2)),
         discountTotal:  parseFloat(discountTotal.toFixed(2)),
         paymentMethod:  paymentMethodSummary,
         status:         'completed',
-        statusPayment:  'paid',
+        statusPayment:  orderStatusPayment,
         orderDetails: {
           create: cartItems.map(item => ({
             productId: item.productId,
@@ -325,6 +365,7 @@ const create = async (saleData, user) => {
       },
     });
 
+
     // ── PASO 8: Registrar OrderPayments ──────────────────────────
     for (const payment of paymentBreakdown) {
       await tx.orderPayment.create({
@@ -334,6 +375,20 @@ const create = async (saleData, user) => {
           amount:        payment.amount,
         },
       });
+    }
+
+    // ── PASO 8b: Registrar deuda en Cuenta Corriente (si aplica) ─
+    let ccMovement = null;
+    if (hasCCPayment && ccAmount > 0) {
+      const ccResult = await currentAccountServices.addSaleDebt(tx, {
+        orderId:     order.id,
+        clientId,
+        storeId:     effectiveStoreId,
+        userId:      user.id,
+        totalAmount: computedFinalTotal,
+        paidAmount:  cashPaid,
+      });
+      ccMovement = ccResult.movement;
     }
 
     // ── Helper: Normalizar applied discount para persistencia ────────
@@ -439,9 +494,15 @@ const create = async (saleData, user) => {
         conditional:   discountResult.conditionalDiscounts,
         warnings:      discountResult.warnings,
       },
+      currentAccount: ccMovement ? {
+        paidAmount:  cashPaid,
+        debtAmount:  ccAmount,
+        balanceAfter: ccMovement.balanceAfter,
+      } : null,
     };
   }); // fin $transaction
 };
+
 
 // ─────────────────────────────────────────────────────────────────
 // getAll / getById (sin cambios en lógica, agrego appliedDiscounts)

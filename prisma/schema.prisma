@@ -9,64 +9,66 @@ datasource db {
 }
 
 model store {
-  id             String         @id @default(cuid())
-  name           String
-  address        String?
-  phone          String?
-  profilePicture String?
-  isActive       Boolean        @default(true)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  maxDiscountPct Float          @default(80)  // Tope global de descuentos por tienda (%)
-  cashMovements  CashMovement[]
-  cashRegisters  CashRegister[]
-  stockHistories StockHistory[]
-  categories     categories[]
-  clients        client[]
-  discountRules  DiscountRule[]
-  orders         order[]
-  payments       payment[]
-  products       product[]
-  suppliers      supplier[]
-  users          user[]
-  Image          Image[]
+  id               String           @id @default(cuid())
+  name             String
+  address          String?
+  phone            String?
+  profilePicture   String?
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  maxDiscountPct   Float            @default(80)  // Tope global de descuentos por tienda (%)
+  cashMovements    CashMovement[]
+  cashRegisters    CashRegister[]
+  stockHistories   StockHistory[]
+  categories       categories[]
+  clients          client[]
+  discountRules    DiscountRule[]
+  orders           order[]
+  payments         payment[]
+  products         product[]
+  suppliers        supplier[]
+  users            user[]
+  Image            Image[]
+  currentAccounts  CurrentAccount[]
 }
 
 model user {
-  id                  String         @id @default(cuid())
-  storeId             String?
-  email               String         @unique
-  password            String
-  firstName           String
-  lastName            String
-  fullName            String?
-  phoneNumber         String
-  address             String
-  city                String
-  profilePicture      String?
+  id                       String                   @id @default(cuid())
+  storeId                  String?
+  email                    String                   @unique
+  password                 String
+  firstName                String
+  lastName                 String
+  fullName                 String?
+  phoneNumber              String
+  address                  String
+  city                     String
+  profilePicture           String?
   // RBAC: relación a tabla Role
-  roleId              String
-  rbacRole            Role           @relation(fields: [roleId], references: [id])
-  isActive            Boolean        @default(true)
-  mustChangePassword  Boolean        @default(true)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-  cashMovements       CashMovement[]
-  closedCashRegisters CashRegister[] @relation("ClosedCashRegisters")
-  openedCashRegisters CashRegister[] @relation("OpenedCashRegisters")
-  createdDiscounts    DiscountRule[] @relation("DiscountCreator")
-  Image               Image[]
-  stockHistories      StockHistory[]
-  orders              order[]
-  payments            payment[]
-  store               store?         @relation(fields: [storeId], references: [id])
+  roleId                   String
+  rbacRole                 Role                     @relation(fields: [roleId], references: [id])
+  isActive                 Boolean                  @default(true)
+  mustChangePassword       Boolean                  @default(true)
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  cashMovements            CashMovement[]
+  closedCashRegisters      CashRegister[]           @relation("ClosedCashRegisters")
+  openedCashRegisters      CashRegister[]           @relation("OpenedCashRegisters")
+  createdDiscounts         DiscountRule[]           @relation("DiscountCreator")
+  Image                    Image[]
+  stockHistories           StockHistory[]
+  orders                   order[]
+  payments                 payment[]
+  store                    store?                   @relation(fields: [storeId], references: [id])
+  currentAccountMovements  CurrentAccountMovement[]
 
   @@index([storeId])
   @@index([roleId])
 }
 
 model client {
-  id             String    @id @default(cuid())
+  id             String          @id @default(cuid())
   storeId        String
   email          String
   firstName      String
@@ -78,13 +80,14 @@ model client {
   address        String
   city           String
   profilePicture String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  isActive       Boolean   @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  isActive       Boolean         @default(true)
   Image          Image[]
-  store          store     @relation(fields: [storeId], references: [id])
+  store          store           @relation(fields: [storeId], references: [id])
   orders         order[]
   payments       payment[]
+  currentAccount CurrentAccount?
 }
 
 model supplier {
@@ -108,28 +111,29 @@ model supplier {
 }
 
 model order {
-  id               String            @id @default(cuid())
-  storeId          String
-  userId           String?
-  cashRegisterId   String?
-  clientId         String?
-  orderDate        DateTime          @default(now())
-  amount           Float
-  amoutPayed       Float             @default(0)
-  amoutToPaid      Float             @default(0)
-  discountTotal    Float?            @default(0)  // Suma total de descuentos aplicados
-  paymentMethod    String?
-  status           String            @default("pending")
-  statusPayment    String?           @default("pending")
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  appliedDiscounts AppliedDiscount[]
-  orderPayments    OrderPayment[]
-  cashRegister     CashRegister?     @relation(fields: [cashRegisterId], references: [id])
-  client           client?           @relation(fields: [clientId], references: [id])
-  store            store             @relation(fields: [storeId], references: [id])
-  user             user?             @relation(fields: [userId], references: [id])
-  orderDetails     orderDetail[]
+  id                    String                   @id @default(cuid())
+  storeId               String
+  userId                String?
+  cashRegisterId        String?
+  clientId              String?
+  orderDate             DateTime                 @default(now())
+  amount                Float
+  amoutPayed            Float                    @default(0)
+  amoutToPaid           Float                    @default(0)
+  discountTotal         Float?                   @default(0)  // Suma total de descuentos aplicados
+  paymentMethod         String?
+  status                String                   @default("pending")
+  statusPayment         String?                  @default("pending")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  appliedDiscounts      AppliedDiscount[]
+  orderPayments         OrderPayment[]
+  cashRegister          CashRegister?            @relation(fields: [cashRegisterId], references: [id])
+  client                client?                  @relation(fields: [clientId], references: [id])
+  store                 store                    @relation(fields: [storeId], references: [id])
+  user                  user?                    @relation(fields: [userId], references: [id])
+  orderDetails          orderDetail[]
+  currentAccountMovement CurrentAccountMovement?
 }
 
 model categories {
@@ -297,6 +301,61 @@ model OrderPayment {
   amount        Float
   createdAt     DateTime @default(now())
   order         order    @relation(fields: [orderId], references: [id])
+}
+
+// ============================================
+// Cuentas Corrientes
+// ============================================
+
+enum CurrentAccountStatus {
+  OPEN
+  CLOSED
+}
+
+enum CurrentAccountMovementType {
+  SALE       // Deuda generada por una venta a crédito
+  PAYMENT    // Pago recibido que reduce la deuda
+  ADJUSTMENT // Ajuste manual (solo SISTEMA)
+}
+
+model CurrentAccount {
+  id        String               @id @default(cuid())
+  clientId  String               @unique
+  storeId   String
+  balance   Float                @default(0)  // Monto adeudado (positivo = debe, 0 = saldado)
+  status    CurrentAccountStatus @default(OPEN)
+  openedAt  DateTime             @default(now())
+  closedAt  DateTime?
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  client    client               @relation(fields: [clientId], references: [id])
+  store     store                @relation(fields: [storeId], references: [id])
+  movements CurrentAccountMovement[]
+
+  @@index([storeId, status])
+  @@index([clientId])
+}
+
+model CurrentAccountMovement {
+  id               String                   @id @default(cuid())
+  currentAccountId String
+  userId           String                   // Vendedor/Encargado que registró el movimiento
+  type             CurrentAccountMovementType
+  totalAmount      Float                    // Monto total del ticket de venta
+  paidAmount       Float                    // Lo que se pagó en el momento
+  debtAmount       Float                    // Diferencia que fue al crédito (+ = nueva deuda, - = pago)
+  balanceAfter     Float                    // Saldo de la cuenta DESPUÉS de este movimiento
+  orderId          String?                  @unique  // Vinculado a la venta (null para PAYMENT/ADJUSTMENT)
+  description      String?                  // Descripción legible (ej: pago en efectivo)
+  createdAt        DateTime                 @default(now())
+
+  currentAccount   CurrentAccount           @relation(fields: [currentAccountId], references: [id])
+  user             user                     @relation(fields: [userId], references: [id])
+  order            order?                   @relation(fields: [orderId], references: [id])
+
+  @@index([currentAccountId])
+  @@index([userId])
 }
 
 enum CashRegisterStatus {

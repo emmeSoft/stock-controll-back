@@ -38,13 +38,17 @@ const create = async (dataClient, user) => {
 }
 
 const getAll = async (user) => {
-    // console.log('Fetching all clients...');
-    // SISTEMA puede ver todos los clientes si no hay override de tienda
     const isSistema = user.role === 'SISTEMA' || user.isSistema;
     const canSeeAll = isSistema && !user.isGlobalOverride;
     const whereClause = canSeeAll ? {} : { storeId: user.storeId };
-    const response = await prisma.client.findMany({ where: whereClause });
-    // console.log('Clients fetched:');
+    const response = await prisma.client.findMany({
+        where: whereClause,
+        include: {
+            currentAccount: {
+                select: { id: true, status: true, balance: true }
+            }
+        }
+    });
     return response;
 }
 
@@ -54,8 +58,15 @@ const getById = async (id, user) => {
         where: whereClause,
         include: {
             Image: {
-                orderBy: {
-                    order: "asc" // orden visual correcto
+                orderBy: { order: "asc" }
+            },
+            currentAccount: {
+                select: {
+                    id: true,
+                    status: true,
+                    balance: true,
+                    openedAt: true,
+                    closedAt: true,
                 }
             }
         }
