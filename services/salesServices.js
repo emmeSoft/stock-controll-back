@@ -11,6 +11,7 @@
  */
 
 const prisma          = require('../db/database.prisma.js');
+const bcrypt          = require('bcrypt');
 const cajaServices    = require('./cajaServices');
 const discountService = require('./discountService');
 const { runPipeline } = require('./discountEngine');
@@ -522,4 +523,100 @@ const getById = async (id, user) => {
   };
 };
 
-module.exports = { create, getAll, getById };
+// ─────────────────────────────────────────────────────────────────
+// cancel
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Anula una venta completada.
+ *
+ * SEGURIDAD:
+ *  - Se verifica que el usuario tenga el permiso `sale.cancel` en la ruta (RBAC).
+ *  - Se requiere la contraseña del usuario para confirmar la operación.
+ *  - El stock se revierte atómicamente junto con el cambio de estado.
+ *
+ * @param {string} orderId  — ID de la venta a anular
+ * @param {string} password — Contraseña del usuario para confirmar
+ * @param {object} user     — Usuario autenticado (req.user)
+ */
+const cancel = async (orderId, password, user) => {
+
+  // ── 1. Verificar contraseña ANTES de cualquier operación ────────
+  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+  if (!dbUser) {
+    throw Object.assign(new Error('Usuario no encontrado.'), { status: 401 });
+  }
+
+  const isPasswordValid = await bcrypt.compare(password, dbUser.password);
+  if (!isPasswordValid) {
+    throw Object.assign(
+      new Error('Contraseña incorrecta. La anulación fue rechazada.'),
+      { status: 401 }
+    );
+  }
+
+  // ── 2. Buscar la venta (scope por tienda) ──────────────────────
+  const order = await prisma.order.findFirst({
+    where: {
+      id: orderId,
+      ...(user.storeId ? { storeId: user.storeId } : {}),
+    },
+    include: {
+      orderDetails: { include: { product: true } },
+    },
+  });
+
+  if (!order) {
+    throw Object.assign(
+      new Error(`Venta con ID ${orderId} no encontrada.`),
+      { status: 404 }
+    );
+  }
+
+  if (order.status === 'CANCELLED') {
+    throw Object.assign(
+      new Error('Esta venta ya fue anulada previamente.'),
+      { status: 400 }
+    );
+  }
+
+  // ── 3. Transacción: anular + revertir stock + historial ────────
+  return await prisma.$transaction(async (tx) => {
+
+    // 3.1 Marcar la venta como CANCELLED
+    const cancelledOrder = await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status:        'CANCELLED',
+        statusPayment: 'cancelled',
+      },
+    });
+
+    // 3.2 Revertir stock y registrar historial por cada ítem
+    for (const detail of order.orderDetails) {
+      const previousStock = detail.product.stock;
+
+      const updatedProduct = await tx.product.update({
+        where: { id: detail.productId },
+        data:  { stock: { increment: detail.quantity } },
+      });
+
+      await tx.stockHistory.create({
+        data: {
+          storeId:        order.storeId,
+          productId:      detail.productId,
+          userId:         user.id || null,
+          type:           'RETURN',
+          previousStock,
+          movementAmount: detail.quantity,   // Positivo: se devuelve al stock
+          currentStock:   updatedProduct.stock,
+          description:    `Devolución por anulación de venta #${orderId.slice(-6).toUpperCase()}`,
+        },
+      });
+    }
+
+    return cancelledOrder;
+  });
+};
+
+module.exports = { create, getAll, getById, cancel };

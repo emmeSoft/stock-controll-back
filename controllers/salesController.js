@@ -79,4 +79,23 @@ const exportSales = async (req, res) => {
   }
 };
 
-module.exports = { createSale, getAllSales, getSaleById, exportSales };
+
+const cancelSale = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ message: 'Se requiere la contraseña para confirmar la anulación.' });
+    }
+
+    const result = await salesServices.cancel(id, password, req.user);
+    res.json({ message: 'Venta anulada correctamente.', order: result });
+  } catch (error) {
+    const status = error.status || 500;
+    res.status(status).json({ message: error.message });
+  }
+};
+
+module.exports = { createSale, getAllSales, getSaleById, exportSales, cancelSale };
+

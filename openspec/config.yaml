@@ -1,66 +1,59 @@
 schema: spec-driven
-version: "1.0"
 
 context: |
   Tech stack: Node.js + Express v5 + Prisma ORM + PostgreSQL
-  Architecture: Layered (routes → controllers → services → discountEngine)
-  Testing: Manual node scripts (no test framework — tests run with `node tests/...`)
-  Style: No linter/formatter configured (vanilla JS, CommonJS modules)
-  Auth: JWT (httpOnly cookies) + RBAC middleware
+  Architecture: Layered (routes → controllers → services)
+  Testing: Manual node scripts (no test framework configured)
+  Style: No linter/formatter configured
 
 strict_tdd: false
-# NOTE: Strict TDD disabled — no test framework (jest/vitest) installed.
-# Tests are manual node scripts. Pipeline requires human verification.
+
+testing:
+  ## Testing Capabilities
+  **Strict TDD Mode**: disabled
+  **Detected**: 2026-04-29
+  
+  ### Test Runner
+  - Command: —
+  - Framework: NOT FOUND
+  
+  ### Test Layers
+  | Layer | Available | Tool |
+  |-------|-----------|------|
+  | Unit | ❌ | — |
+  | Integration | ❌ | — |
+  | E2E | ❌ | — |
+  
+  ### Coverage
+  - Available: ❌
+  - Command: —
+  
+  ### Quality Tools
+  | Tool | Available | Command |
+  |------|-----------|---------|
+  | Linter | ❌ | — |
+  | Type checker | ❌ | — |
+  | Formatter | ❌ | — |
 
 rules:
   proposal:
-    - Include rollback plan (git revert + DB dump)
-    - Identify affected modules and backward-compatible contracts
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages
   specs:
     - Use Given/When/Then format for scenarios
     - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
   design:
-    - Document the merge contract between legacy and universal engine outputs
     - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
   tasks:
-    - Group tasks by phase (F0, F1, F2, F3, F4)
-    - Use hierarchical numbering (2.1, 2.2, etc.)
-    - Each task must be completable in one file-edit session
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
   apply:
-    - Never break the legacy engine — run universal in parallel
-    - engineVersion field is the single source of truth for routing
-    - Validate dual conditions via validateConditionsDual()
+    - Follow existing code patterns and conventions
+    - Load relevant coding skills for the project stack
   verify:
-    - Run manual node test scripts and confirm output
-    - Compare with spec scenarios manually
+    - Run tests if test infrastructure exists
+    - Compare implementation against every spec scenario
   archive:
-    - Warn before removing legacy evaluators (destructive)
-
-testing:
-  strict_tdd: false
-  runner:
-    framework: manual (node scripts)
-    command: "node tests/discountEngine/universal.test.js"
-  layers:
-    unit:
-      available: true
-      tool: "node (manual scripts)"
-    integration:
-      available: false
-      tool: "—"
-    e2e:
-      available: false
-      tool: "—"
-  coverage:
-    available: false
-    command: "—"
-  quality_tools:
-    linter:
-      available: false
-      command: "—"
-    type_checker:
-      available: false
-      command: "—"
-    formatter:
-      available: false
-      command: "—"
+    - Warn before merging destructive deltas (large removals)

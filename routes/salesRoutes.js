@@ -8,5 +8,7 @@ router.post('/', authMiddleware, requirePermission('sale.create'), salesControll
 router.get('/export', authMiddleware, requirePermission('sale.read'), salesController.exportSales);
 router.get('/', authMiddleware, requirePermission('sale.read'), salesController.getAllSales);
 router.get('/:id', authMiddleware, requirePermission('sale.read'), salesController.getSaleById);
+router.patch('/:id/cancel', authMiddleware, requirePermission('sale.cancel'), salesController.cancelSale);
 
 module.exports = router;
+
