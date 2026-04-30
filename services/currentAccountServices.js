@@ -25,6 +25,7 @@ const cajaServices  = require('./cajaServices');
 async function requireOpenAccount(clientId, storeId) {
   const account = await prisma.currentAccount.findFirst({
     where: { clientId, storeId },
+    include: { client: { select: { firstName: true, lastName: true } } }
   });
 
   if (!account) {
@@ -270,6 +271,7 @@ const registerPayment = async (data, user) => {
     });
 
     // 3. Registrar INCOME en la caja activa
+    const clientName = `${accountPre.client.firstName} ${accountPre.client.lastName}`;
     await tx.cashMovement.create({
       data: {
         store:        { connect: { id: storeId } },
@@ -277,7 +279,7 @@ const registerPayment = async (data, user) => {
         user:         { connect: { id: user.id } },
         type:         'INCOME',
         amount,
-        description:  `Pago cuenta corriente — ${paymentMethod}`,
+        description:  `Pago cuenta corriente (${clientName}) — ${paymentMethod}`,
         reference:    `CC-${accountPre.id}`,
       },
     });
