@@ -102,9 +102,12 @@ const closeRegister = async (data, user) => {
 
     // Calcular el expected amount: openingAmount + order sales + income movements - expense movements
     
-    // 1. Obtener ordenes pagadas durante la caja
+    // 1. Obtener ordenes vinculadas a esta caja (todas las que no estén canceladas)
     const orders = await prisma.order.findMany({
-        where: { cashRegisterId: openRegister.id, statusPayment: 'paid' },
+        where: { 
+            cashRegisterId: openRegister.id, 
+            status: { not: 'CANCELLED' } 
+        },
         include: { orderPayments: true }
     });
     
@@ -253,7 +256,7 @@ const getAllRegisters = async (user, query = {}) => {
             openedByUser: true,
             closedByUser: true,
             orders: {
-                where: { statusPayment: 'paid' },
+                where: { status: { not: 'CANCELLED' } },
                 include: { orderPayments: true }
             },
             cashMovements: true
@@ -274,7 +277,7 @@ const getAllRegisters = async (user, query = {}) => {
                     if (method === 'efectivo') totalEfectivo += p.amount;
                     else if (method === 'transferencia') totalTransferencia += p.amount;
                     else if (method === 'tarjeta') totalTarjeta += p.amount;
-                    else totalEfectivo += p.amount; // Default a efectivo
+                    // El método 'cuenta_corriente' NO suma a la caja física
                 });
             } else {
                 // Fallback para órdenes antiguas basadas únicamente en paymentMethod

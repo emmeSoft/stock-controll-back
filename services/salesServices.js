@@ -97,6 +97,16 @@ const create = async (saleData, user) => {
     }
   }
 
+  // ── Normalización de Métodos de Pago ──────────────
+  // El frontend puede enviar "Cuenta Corriente", "Efectivo", etc.
+  // Normalizamos a las constantes internas del sistema.
+  if (Array.isArray(paymentBreakdown)) {
+    paymentBreakdown.forEach(p => {
+      if (p.method === "Cuenta Corriente") p.method = "CUENTA_CORRIENTE";
+      // Aseguramos que otros métodos comunes estén en un formato estándar si fuera necesario
+    });
+  }
+
   // ── Validación de Cuenta Corriente ────────────────────────────
   // Si algún pago usa 'CUENTA_CORRIENTE', verificar elegibilidad ANTES de la tx.
   const hasCCPayment = (paymentBreakdown ?? []).some(p => p.method === 'CUENTA_CORRIENTE');
