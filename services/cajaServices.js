@@ -268,6 +268,7 @@ const getAllRegisters = async (user, query = {}) => {
         let totalEfectivo = 0;
         let totalTransferencia = 0;
         let totalTarjeta = 0;
+        let totalCuentaCorriente = 0;
 
         reg.orders.forEach(order => {
             // Si la orden tiene desglose de pagos (OrderPayment), sumamos cada uno a su categoría
@@ -277,7 +278,8 @@ const getAllRegisters = async (user, query = {}) => {
                     if (method === 'efectivo') totalEfectivo += p.amount;
                     else if (method === 'transferencia') totalTransferencia += p.amount;
                     else if (method === 'tarjeta') totalTarjeta += p.amount;
-                    // El método 'cuenta_corriente' NO suma a la caja física
+                    else if (method === 'cuenta_corriente') totalCuentaCorriente += p.amount;
+                    else totalEfectivo += p.amount;
                 });
             } else {
                 // Fallback para órdenes antiguas basadas únicamente en paymentMethod
@@ -285,6 +287,7 @@ const getAllRegisters = async (user, query = {}) => {
                 if (method === 'efectivo') totalEfectivo += order.amoutPayed;
                 else if (method === 'transferencia') totalTransferencia += order.amoutPayed;
                 else if (method === 'tarjeta') totalTarjeta += order.amoutPayed;
+                else if (method === 'cuenta_corriente') totalCuentaCorriente += order.amoutToPaid;
                 else totalEfectivo += order.amoutPayed;
             }
         });
@@ -303,6 +306,7 @@ const getAllRegisters = async (user, query = {}) => {
                 ventasEfectivo: totalEfectivo,
                 ventasTransferencia: totalTransferencia,
                 ventasTarjeta: totalTarjeta,
+                ventasCuentaCorriente: totalCuentaCorriente,
                 ingresosManuales: totalIncome,
                 retirosManuales: totalExpense
             }
