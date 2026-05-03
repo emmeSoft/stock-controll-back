@@ -114,6 +114,16 @@ const create = async (saleData, user) => {
     if (!clientId) {
       throw new Error('El método de pago "Cuenta Corriente" solo puede usarse con un cliente seleccionado.');
     }
+
+    // BLINDAJE: Verificar si el usuario tiene permiso para operar con Cuentas Corrientes (account.payment)
+    // Importamos el servicio de RBAC para verificar permisos dinámicamente
+    const rbacService = require('./rbacService');
+    const hasPermission = await rbacService.hasPermission(user.id, 'account.payment', effectiveStoreId);
+    
+    if (!hasPermission && user.rbacRole?.name !== 'SISTEMA') {
+      throw new Error('No tenés permisos para realizar ventas a Cuenta Corriente.');
+    }
+
     // Verificar que el cliente tiene cuenta corriente ABIERTA en esta tienda
     const ccAccount = await prisma.currentAccount.findFirst({
       where: { clientId, storeId: effectiveStoreId, status: 'OPEN' },

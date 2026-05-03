@@ -35,7 +35,8 @@ async function seedPermissions() {
   };
 
   for (const role of roles) {
-    const allowed = roleMap[role.name] || [];
+    const roleNameUpper = role.name.toUpperCase();
+    const allowed = roleMap[roleNameUpper] || [];
     for (const pName of allowed) {
       const permission = perms.find(p => p.name === pName);
       if (permission) {
