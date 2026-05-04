@@ -116,9 +116,12 @@ const create = async (saleData, user) => {
     }
 
     // BLINDAJE: Verificar si el usuario tiene permiso para operar con Cuentas Corrientes (account.payment)
-    // Importamos el servicio de RBAC para verificar permisos dinámicamente
     const rbacService = require('./rbacService');
-    const hasPermission = await rbacService.hasPermission(user.id, 'account.payment', effectiveStoreId);
+    const hasPermission = await rbacService.checkPermission({
+      userId: user.id,
+      storeId: effectiveStoreId,
+      permission: 'account.payment',
+    });
     
     if (!hasPermission && user.rbacRole?.name !== 'SISTEMA') {
       throw new Error('No tenés permisos para realizar ventas a Cuenta Corriente.');
