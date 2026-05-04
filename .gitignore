@@ -7,10 +7,20 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+/jspm_packages
+
+# Build artifacts
 dist
 dist-ssr
-*.local
+build/
+*.tgz
+
+# Environment files (CRITICAL: Never commit these)
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -23,49 +33,38 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment files
-.env
-.env.local
-.env.*.local
+# OS
+Thumbs.db
 
 # Prisma
 /generated/
 prisma/*.json
 !prisma/schema.prisma
+!prisma/seed.js
+!prisma/seedRbac.js
 
-# Seed and data files (NO subir a git)
-superadmin.json
+# Database / Scripts / Temp
+*.db
+*.sqlite
+check_db.js
+createSistemaUser.js
 temp_check.js
 upsertSuperadmin.js
-prisma/seed.js
-prisma/seedRbac.js
 prisma/create_maxi.js
 prisma/superadmin.json
-prisma/*.json
 data/
 *.seed.json
 conflicts.txt
-
-# OS
-Thumbs.db
+.conflicts.txt
+.exploration.md
+scratch/
+exploration.md
 
 # Testing
 coverage/
 
-# Build artifacts
-*.tgz
-
-
-createSistemaUser.js
-
-
-
-.conflicts.txt
-.exploration.md
-scratch/
-check_db.js
-
-
-config.yaml
-
-.atl
+# Agent / SDD
+.atl/
+# openspec/ is usually COMMITTED for team collaboration, 
+# but if you want it private, uncomment the line below:
+# openspec/
