@@ -91,6 +91,15 @@ const PERMISSIONS = [
   { name: 'discount.read',   category: 'DESCUENTOS', description: 'Ver reglas de descuento' },
   { name: 'discount.update', category: 'DESCUENTOS', description: 'Editar reglas de descuento' },
   { name: 'discount.delete', category: 'DESCUENTOS', description: 'Desactivar reglas de descuento (soft delete)' },
+
+  // CUENTAS CORRIENTES
+  { name: 'account.view', category: 'CUENTAS CORRIENTES', description: 'Ver listado y saldo de cuentas corrientes' },
+  { name: 'account.detail', category: 'CUENTAS CORRIENTES', description: 'Ver detalle de movimientos de cuenta corriente' },
+  { name: 'account.open', category: 'CUENTAS CORRIENTES', description: 'Abrir cuenta corriente a un cliente' },
+  { name: 'account.close', category: 'CUENTAS CORRIENTES', description: 'Cerrar cuenta corriente (saldo 0)' },
+  { name: 'account.payment', category: 'CUENTAS CORRIENTES', description: 'Registrar pagos a cuenta corriente' },
+  { name: 'account.audit', category: 'CUENTAS CORRIENTES', description: 'Ver auditoría de movimientos' },
+  { name: 'account.edit', category: 'CUENTAS CORRIENTES', description: 'Editar o anular movimientos manuales' },
 ];
 
 const ROLES = [
@@ -119,6 +128,7 @@ const ROLE_PERMISSIONS = {
     'audit.read', 'audit.export',
     'integration.read', 'integration.update',
     'discount.create', 'discount.read', 'discount.update', 'discount.delete',
+    'account.view', 'account.detail', 'account.open', 'account.close', 'account.payment', 'account.audit', 'account.edit',
   ],
   ENCARGADO: [
     'user.read',
@@ -135,6 +145,7 @@ const ROLE_PERMISSIONS = {
     'config.read',
     'integration.read',
     'discount.create', 'discount.read', 'discount.update', 'discount.delete',
+    'account.view', 'account.detail', 'account.open', 'account.payment', 'account.audit',
   ],
   VENDEDOR: [
     'product.read',
@@ -147,6 +158,7 @@ const ROLE_PERMISSIONS = {
     'report.sales',
     'caja.open', 'caja.close', 'caja.read',
     'discount.read',
+    'account.view', 'account.detail', 'account.audit',
   ],
 };
 

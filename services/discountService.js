@@ -10,7 +10,7 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
-const prisma              = require('../db/database.prisma.js');
+const prisma = require('../db/database.prisma.js');
 const { validateConditions, getLayer, DEFAULT_PRIORITIES, runPipeline } = require('./discountEngine');
 const { runUniversalPipeline } = require('./discountEngine/universal');
 const { validateConditionsDual } = require('./discountEngine/validators');
@@ -25,7 +25,7 @@ const { validateConditionsDual } = require('./discountEngine/validators');
  */
 async function validatePercentageAgainstCap(storeId, percentage) {
   const storeConfig = await prisma.store.findUnique({
-    where:  { id: storeId },
+    where: { id: storeId },
     select: { maxDiscountPct: true },
   });
   const storeMax = storeConfig?.maxDiscountPct ?? 50;
@@ -75,7 +75,7 @@ function splitRulesByEngine(rules) {
  */
 function mergeEngineResults(legacyResult, universalResult, originalTotal, allRules = [], maxDiscountPct = 80, preferredRuleIds = [], excludedRuleIds = []) {
   console.log('🚀 [BLINDAJE] maxPct:', maxDiscountPct, 'Preferred:', preferredRuleIds, 'Excluded:', excludedRuleIds);
-  const legacyDiscountTotal    = legacyResult?.discountTotal   ?? 0;
+  const legacyDiscountTotal = legacyResult?.discountTotal ?? 0;
   const universalDiscountTotal = universalResult?.discountTotal ?? 0;
   const rawDiscountTotal = legacyDiscountTotal + universalDiscountTotal;
 
@@ -92,6 +92,8 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
       ...d,
       name: rule?.name ?? d.name ?? d.reason ?? `Descuento ${d.ruleId?.substring(0, 8)}`,
       percentage: rule?.percentage ?? d.percentage ?? null,
+      allowPartial: rule?.allowPartial ?? d.allowPartial ?? false, // NUEVO
+      _matchingAmount: d._matchingAmount ?? rule?._matchingAmount, // NUEVO
       priority: rule?.priority ?? 0,
       type: d.productId || d.type === 'ITEM' ? 'ITEM' : (rule?.type ?? 'ORDER'),
       engine: d.engine ?? 'universal',
@@ -117,7 +119,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
     // 2. Prioridad Natural (ITEM > ORDER)
     const layerA = a.productId || a.type === 'ITEM' ? 0 : 1;
     const layerB = b.productId || b.type === 'ITEM' ? 0 : 1;
-    if (layerA !== layerB) return layerA - layerB; 
+    if (layerA !== layerB) return layerA - layerB;
 
     // 3. Valor de Prioridad (DESC)
     const prioA = a.priority || 0;
@@ -138,8 +140,14 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
     // Si la regla tiene porcentaje, se calcula SIEMPRE sobre el total original.
     // Si la regla es de monto fijo, se usa el monto absoluto.
     const hasPct = d.percentage !== null && d.percentage !== undefined;
+
+    // Impacto Nominal: Si es parcial, se calcula sobre el monto que coincide, no sobre el total.
+    const baseForNominal = (d.allowPartial && d._matchingAmount !== undefined)
+      ? Math.min(d._matchingAmount, originalTotal)
+      : originalTotal;
+
     const nominalImpact = hasPct
-      ? parseFloat(((originalTotal * d.percentage) / 100).toFixed(2))
+      ? parseFloat(((baseForNominal * d.percentage) / 100).toFixed(2))
       : (d.amount || 0);
 
     const isExcluded = excludedRuleIds.includes(d.ruleId);
@@ -169,13 +177,16 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
       // Regla de ITEM: Mantenemos el monto calculado por el motor (es específico al producto)
       finalAmount = rule.amount;
     } else {
-      // Regla de ORDER: Recalculamos sobre el subtotal ACTUAL de la cascada limpia
-      finalAmount = parseFloat((currentSubtotal * ((rule.percentage ?? 0) / 100)).toFixed(2));
+      // Regla de ORDER: Recalculamos sobre el subtotal ACTUAL o sobre el _matchingAmount si es parcial
+      const baseAmount = (rule.allowPartial && rule._matchingAmount !== undefined)
+        ? Math.min(rule._matchingAmount, currentSubtotal)
+        : currentSubtotal;
+      finalAmount = parseFloat((baseAmount * ((rule.percentage ?? 0) / 100)).toFixed(2));
     }
 
     const updatedRule = { ...rule, amount: finalAmount };
     recalculatedApplied.push(updatedRule);
-    
+
     currentSubtotal = parseFloat((currentSubtotal - finalAmount).toFixed(2));
     totalRecalculatedDiscount = parseFloat((totalRecalculatedDiscount + finalAmount).toFixed(2));
   }
@@ -208,7 +219,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
   });
 
   const warnings = [
-    ...(legacyResult?.warnings   ?? []),
+    ...(legacyResult?.warnings ?? []),
     ...(universalResult?.warnings ?? []),
   ];
 
@@ -223,7 +234,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
     maxDiscountAmount: maxAllowedDiscount,
     items: survivorItems,
     conditionalDiscounts: [
-      ...(legacyResult?.conditionalDiscounts   ?? []),
+      ...(legacyResult?.conditionalDiscounts ?? []),
       ...(universalResult?.conditionalDiscounts ?? []),
     ],
     warnings,
@@ -245,22 +256,24 @@ function sanitizeRuleInput(body) {
     engineVersion,
     priority,
     isCombinable,
+    allowPartial,
     combinesWith,
     maxPercentage,
   } = body;
   return {
     name, description,
-    type:        type ?? null,
+    type: type ?? null,
     percentage,
-    startsAt:    startsAt ? new Date(startsAt) : null,
-    endsAt:      endsAt   ? new Date(endsAt)   : null,
-    conditions:  conditions   ?? null,
+    startsAt: startsAt ? new Date(startsAt) : null,
+    endsAt: endsAt ? new Date(endsAt) : null,
+    conditions: conditions ?? null,
     conditionsUniversal: conditionsUniversal ?? null,
     engineVersion: engineVersion ?? 'legacy',
-    priority:       priority       ?? DEFAULT_PRIORITIES[type] ?? 0,
-    isCombinable:   isCombinable   ?? true,
-    combinesWith:   combinesWith   ?? [],
-    maxPercentage:  maxPercentage  ?? null,
+    priority: priority ?? DEFAULT_PRIORITIES[type] ?? 0,
+    isCombinable: isCombinable ?? true,
+    allowPartial: allowPartial ?? false,
+    combinesWith: combinesWith ?? [],
+    maxPercentage: maxPercentage ?? null,
   };
 }
 
@@ -303,9 +316,9 @@ function validateRuleBody({ type, percentage, conditions, conditionsUniversal, e
  */
 const getAll = async (storeId) => {
   if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
-  
+
   return prisma.discountRule.findMany({
-    where:   { storeId },
+    where: { storeId },
     orderBy: [{ isActive: 'desc' }, { priority: 'desc' }, { createdAt: 'desc' }],
     include: { creator: { select: { id: true, fullName: true, email: true } } },
   });
@@ -316,9 +329,9 @@ const getAll = async (storeId) => {
  */
 const getById = async (id, storeId) => {
   if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
-  
+
   const rule = await prisma.discountRule.findFirst({
-    where:   { id, storeId },
+    where: { id, storeId },
     include: { creator: { select: { id: true, fullName: true, email: true } } },
   });
   if (!rule) throw new Error(`Regla de descuento '${id}' no encontrada.`);
@@ -391,7 +404,7 @@ const update = async (id, body, user) => {
 
   const rule = await prisma.discountRule.update({
     where: { id },
-    data:  { layer, ...input },
+    data: { layer, ...input },
     include: { creator: { select: { id: true, fullName: true } } },
   });
 
@@ -405,12 +418,12 @@ const update = async (id, body, user) => {
 const deactivate = async (id, user) => {
   const storeId = user.storeId;
   if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
-  
+
   await getById(id, storeId); // verifica ownership
 
   return prisma.discountRule.update({
     where: { id },
-    data:  { isActive: false },
+    data: { isActive: false },
   });
 };
 
@@ -426,7 +439,7 @@ const deactivate = async (id, user) => {
 const remove = async (id, user) => {
   const storeId = user.storeId;
   if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
-  
+
   // Verificar ownership antes de eliminar
   await getById(id, storeId);
 
@@ -452,12 +465,12 @@ const remove = async (id, user) => {
 const activate = async (id, user) => {
   const storeId = user.storeId;
   if (!storeId) throw new Error('El usuario no tiene tienda asignada.');
-  
+
   await getById(id, storeId);
 
   return prisma.discountRule.update({
     where: { id },
-    data:  { isActive: true },
+    data: { isActive: true },
   });
 };
 
@@ -469,34 +482,50 @@ const activate = async (id, user) => {
  * Calcula descuentos SIN persistir nada.
  * Usa exactamente el mismo motor que la venta real.
  *
- * @param {object} body — { items, clientId?, paymentMethods? }
+ * @param {object} body — { items, clientId?, paymentMethods?, paymentBreakdown? }
  * @param {object} user — usuario autenticado
  */
-const preview = async (storeId, { items, clientId, paymentMethods, preferredRuleIds = [], excludedRuleIds = [] }) => {
+const preview = async (storeId, body) => {
+  const {
+    items,
+    clientId,
+    paymentMethods,
+    paymentBreakdown,
+    preferredRuleIds = [],
+    excludedRuleIds = []
+  } = body;
+
+  // Normalización de Métodos de Pago (Consistencia con salesServices.js)
+  if (Array.isArray(paymentBreakdown)) {
+    paymentBreakdown.forEach(p => {
+      if (p.method === "Cuenta Corriente") p.method = "CUENTA_CORRIENTE";
+    });
+  }
+
   if (!items || !Array.isArray(items)) throw new Error("Items son requeridos.");
 
   // Leer precios reales de DB (nunca del frontend)
   const productIds = items.map(i => i.id ?? i.productId);
   const dbProducts = await prisma.product.findMany({
-    where:  { id: { in: productIds }, storeId },
+    where: { id: { in: productIds }, storeId },
     select: { id: true, price: true, categoryId: true },
   });
   const productMap = new Map(dbProducts.map(p => [p.id, p]));
 
   const cartItems = items.map(item => {
-    const pid     = item.id ?? item.productId;
+    const pid = item.id ?? item.productId;
     const product = productMap.get(pid);
     if (!product) throw new Error(`Producto '${pid}' no encontrado en esta tienda.`);
     return {
-      productId:  pid,
+      productId: pid,
       categoryId: product.categoryId ?? undefined,
-      quantity:   item.quantity,
-      unitPrice:  product.price,
+      quantity: item.quantity,
+      unitPrice: product.price,
     };
   });
 
   const store = await prisma.store.findUnique({
-    where:  { id: storeId },
+    where: { id: storeId },
     select: { maxDiscountPct: true },
   });
 
@@ -518,10 +547,10 @@ const preview = async (storeId, { items, clientId, paymentMethods, preferredRule
   const legacyContext = {
     storeId,
     store: { maxDiscountPct: store?.maxDiscountPct ?? 80 },
-    clientId:       clientId ?? null,
+    clientId: clientId ?? null,
     paymentMethods: paymentMethods ?? [],
-    items:          cartItems,
-    rules:          legacyRules,   // inyectadas directamente — no hay segundo fetch
+    items: cartItems,
+    rules: legacyRules,   // inyectadas directamente — no hay segundo fetch
   };
   const legacyResult = legacyRules.length > 0
     ? await runPipeline(legacyContext)
@@ -530,9 +559,10 @@ const preview = async (storeId, { items, clientId, paymentMethods, preferredRule
   // ── Ejecutar motor universal (SC-2.2) ─────────────────────────
   const universalContext = {
     storeId,
-    clientId:       clientId ?? null,
+    clientId: clientId ?? null,
     paymentMethods: paymentMethods ?? [],
-    items:          cartItems,
+    paymentBreakdown: paymentBreakdown ?? [],
+    items: cartItems,
   };
   const universalResult = universalRules.length > 0
     ? runUniversalPipeline(universalContext, universalRules)
@@ -540,10 +570,10 @@ const preview = async (storeId, { items, clientId, paymentMethods, preferredRule
 
   // ── Merge de resultados (SC-2.3) ──────────────────────────────
   return mergeEngineResults(
-    legacyResult, 
-    universalResult, 
-    originalTotal, 
-    allRules, 
+    legacyResult,
+    universalResult,
+    originalTotal,
+    allRules,
     store?.maxDiscountPct ?? 50,
     preferredRuleIds,
     excludedRuleIds // Pasamos las exclusiones al unificador
