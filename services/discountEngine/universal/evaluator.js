@@ -112,14 +112,17 @@ function validateTicketConditions(ticketConditions, context, rule = {}) {
       // En modo binario, asumimos impacto total si coincide
       rule._matchingAmount = context.orderSubtotal;
     } else {
-      // Cálculo preciso: ¿cuánta plata entró por los medios permitidos?
+      // Cálculo preciso: cuánta plata entra por los medios válidos.
+      // Los montos del breakdown son los importes EXPLÍCITOS ingresados por el usuario.
+      // El modo no-split siempre manda productsTotal (ver DiscountSummaryModal),
+      // por lo que no hay riesgo de referencia circular.
       const matchingAmount = context.paymentBreakdown
         .filter(p => paymentMethods.includes(p.method))
         .reduce((sum, p) => sum + p.amount, 0);
 
       if (matchingAmount <= 0) return false;
 
-      // Si allowPartial es false, el pago debe cubrir TODO el subtotal (pago único)
+      // Si allowPartial es false, el pago debe cubrir TODO el subtotal
       if (!allowPartial && matchingAmount < context.orderSubtotal - 0.01) {
         return false;
       }
