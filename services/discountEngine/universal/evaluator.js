@@ -116,9 +116,13 @@ function validateTicketConditions(ticketConditions, context, rule = {}) {
       // Los montos del breakdown son los importes EXPLÍCITOS ingresados por el usuario.
       // El modo no-split siempre manda productsTotal (ver DiscountSummaryModal),
       // por lo que no hay riesgo de referencia circular.
+      // Usamos baseAmount (el valor BRUTO que ese pago representa) cuando existe.
+      // Esto evita la referencia circular: si el front envía el neto como amount,
+      // el descuento se calcularía sobre el neto y el resultado nunca cerraría.
+      // baseAmount es retrocompatible: si no viene, cae a amount (comportamiento anterior).
       const matchingAmount = context.paymentBreakdown
         .filter(p => paymentMethods.includes(p.method))
-        .reduce((sum, p) => sum + p.amount, 0);
+        .reduce((sum, p) => sum + (p.baseAmount ?? p.amount), 0);
 
       if (matchingAmount <= 0) return false;
 

@@ -153,8 +153,10 @@ function resolveOrderDiscounts(orderRules, residualSubtotal) {
     const sortedCombinable = [...combinable].sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
     for (const r of sortedCombinable) {
-      const allowPartial = r.allowPartial ?? false;
-      const baseAmount = (allowPartial && r._matchingAmount !== undefined)
+      // Si hay _matchingAmount (regla con restricción de medio de pago),
+      // siempre calcular el descuento sobre ese monto y no sobre el total.
+      // allowPartial controla elegibilidad (evaluator), no la base de cálculo.
+      const baseAmount = (r._matchingAmount !== undefined)
         ? Math.min(r._matchingAmount, tempTotal)
         : tempTotal;
 
@@ -180,8 +182,8 @@ function resolveOrderDiscounts(orderRules, residualSubtotal) {
 
   if (nonCombinable.length > 0) {
     for (const r of nonCombinable) {
-      const allowPartial = r.allowPartial ?? false;
-      const baseAmount = (allowPartial && r._matchingAmount !== undefined)
+      // Mismo criterio que combinables: _matchingAmount manda cuando existe.
+      const baseAmount = (r._matchingAmount !== undefined)
         ? Math.min(r._matchingAmount, residualSubtotal)
         : residualSubtotal;
 
