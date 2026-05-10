@@ -113,16 +113,12 @@ function validateTicketConditions(ticketConditions, context, rule = {}) {
       rule._matchingAmount = context.orderSubtotal;
     } else {
       // Cálculo preciso: cuánta plata entra por los medios válidos.
-      // Si solo hay un método de pago, por definición cubre el 100% de la venta (bruto).
-      // Si hay split, usa baseAmount si el frontend lo provee, sino usa amount.
+      // Los montos del breakdown son los importes EXPLÍCITOS ingresados por el usuario.
+      // El modo no-split siempre manda productsTotal (ver DiscountSummaryModal),
+      // por lo que no hay riesgo de referencia circular.
       const matchingAmount = context.paymentBreakdown
         .filter(p => paymentMethods.includes(p.method))
-        .reduce((sum, p) => {
-            if (p.baseAmount) return sum + p.baseAmount;
-            if (context.paymentBreakdown.length === 1) return sum + context.orderSubtotal;
-            return sum + p.amount;
-        }, 0);
-
+        .reduce((sum, p) => sum + p.amount, 0);
 
       if (matchingAmount <= 0) return false;
 
