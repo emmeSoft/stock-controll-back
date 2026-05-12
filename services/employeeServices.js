@@ -137,7 +137,7 @@ const create = async (dataEmployee, user) => {
     }
     
     // Un ADMINISTRADOR no puede crear un SISTEMA
-    if (getActorRole(user) === 'ADMINISTRADOR' && requestedRoleName === 'SISTEMA') {
+    if (getActorRole(user) !== 'SISTEMA' && requestedRoleName === 'SISTEMA') {
         throw new Error('No tienes permisos para crear un usuario de nivel SISTEMA.');
     }
 
@@ -232,8 +232,13 @@ const update = async (id, dataEmployee, user) => {
     const currentRoleName = getRoleName(existing.rbacRole);
     
     // Un ADMINISTRADOR no puede promoverse o promover a alguien a SISTEMA
-    if (getActorRole(user) === 'ADMINISTRADOR' && requestedRoleName === 'SISTEMA') {
+    if (getActorRole(user) !== 'SISTEMA' && requestedRoleName === 'SISTEMA') {
         throw new Error('No tienes permisos para otorgar nivel SISTEMA.');
+    }
+
+    // No se puede cambiar el rol propio (para evitar escalamiento o des-categorización accidental)
+    if (requestedRoleName && id === user.id && requestedRoleName !== currentRoleName) {
+        throw new Error('No puedes cambiar tu propio nivel de permisos. Solicita este cambio a otro administrador o al soporte técnico.');
     }
 
     if (requestedRoleName && requestedRoleName !== currentRoleName) {
@@ -279,8 +284,18 @@ const setActiveStatus = async (id, isActive, user) => {
     verifySudoMode(user.req);
     
     const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
-    const existing = await prisma.user.findFirst({ where: whereClause });
-    if (!existing) throw new Error("Empleado no encontrado o denegado");
+    const existing = await prisma.user.findFirst({ where: { id: id } }); // Usamos id directo para validar existencia global si hace falta
+    if (!existing) throw new Error("Empleado no encontrado");
+
+    // Impedir que se dé de baja a sí mismo
+    if (id === user.id && isActive === false) {
+        throw new Error("No puedes darte de baja a ti mismo. Esta acción debe ser realizada por otro administrador.");
+    }
+
+    // Verificar permisos sobre el objetivo (si no es SISTEMA, solo puede tocar gente de su tienda)
+    if (user.storeId && existing.storeId !== user.storeId) {
+        throw new Error("No tienes permisos para modificar usuarios de otra tienda.");
+    }
 
     const response = await prisma.user.update({
         where: { id },
@@ -298,6 +313,12 @@ const resetPassword = async (employeeId, adminUser) => {
 
     // 2. Buscar al empleado a blanquear
     const isAdminSistema = getActorRole(adminUser) === 'SISTEMA' || adminUser.isSistema;
+    
+    // Impedir que se blanquee la clave a sí mismo
+    if (employeeId === adminUser.id) {
+        throw new Error("No puedes blanquear tu propia clave. Si deseas cambiarla, hacelo desde tu perfil.");
+    }
+
     const whereClause = isAdminSistema ? { id: employeeId } : { id: employeeId, storeId: adminUser.storeId };
     const employeeRecord = await prisma.user.findFirst({
         where: whereClause,
