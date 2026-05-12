@@ -61,6 +61,7 @@ const authMiddleware = async (req, res, next) => {
 
     // Validación de integridad: Si no es SISTEMA y no tiene tienda, fuera.
     if (!req.user.isSistema && !req.user.storeId) {
+       console.warn(`[AUTH] 403 - Usuario ${req.user.id} (${req.user.rbacRole}) intentando operar sin tienda asignada.`);
        return res.status(403).json({ message: 'Tu cuenta no tiene una tienda asignada para operar.' });
     }
 
@@ -75,11 +76,12 @@ const authMiddleware = async (req, res, next) => {
 
          // REGLA CRÍTICA: Si simula un rol operativo, DEBE tener una tienda seleccionada.
          // No se puede ser "Vendedor" en el limbo de "TODAS LAS TIENDAS".
-         if (!req.user.storeId) {
+          if (!req.user.storeId) {
+            console.warn(`[AUTH] 403 - Intento de simulación de rol operativo "${simulatedRole}" sin tienda seleccionada.`);
             return res.status(403).json({ 
                 message: 'Para simular este rol operativo, debes seleccionar una tienda específica primero.' 
             });
-         }
+          }
        }
     }
 

@@ -500,6 +500,7 @@ model DiscountRule {
 
   // Combinabilidad: ITEM = competitiva (un ganador). ORDER = cooperativa (distintos suman).
   isCombinable  Boolean         @default(true)
+  allowPartial  Boolean         @default(false)
   combinesWith  DiscountType[]  // Auto-generado según tipo; solo override restrictivo
   maxPercentage Float?
 

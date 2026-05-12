@@ -111,7 +111,7 @@ async function checkPermission({ userId, storeId, permission, simulatedRole }) {
     const hasPermission = userPermissions.includes(permission);
 
     if (!hasPermission) {
-      console.warn(`[RBAC] DENIED: User ${userId} lacks "${permission}"`);
+      console.warn(`[RBAC] DENIED: User ${userId} (${user.rbacRole.name}) lacks "${permission}". Available: [${userPermissions.join(', ')}]`);
     }
 
     return hasPermission;

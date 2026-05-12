@@ -10,11 +10,11 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
-const prisma                 = require('../db/database.prisma.js');
-const bcrypt                 = require('bcrypt');
-const cajaServices           = require('./cajaServices');
-const discountService        = require('./discountService');
-const { runPipeline }        = require('./discountEngine');
+const prisma = require('../db/database.prisma.js');
+const bcrypt = require('bcrypt');
+const cajaServices = require('./cajaServices');
+const discountService = require('./discountService');
+const { runPipeline } = require('./discountEngine');
 const { runUniversalPipeline } = require('./discountEngine/universal');
 const currentAccountServices = require('./currentAccountServices');
 
@@ -43,9 +43,11 @@ function validatePayments(paymentBreakdown, computedTotal) {
   // El 0.1% sigue siendo lo suficientemente estricto para detectar manipulaciones reales.
   const tolerance = Math.max(0.01, computedTotal * 0.001);
 
-  if (Math.abs(totalPaid - computedTotal) > tolerance) {
+  // SEGURIDAD: Solo validamos que el total pagado sea SUFICIENTE para cubrir el total calculado.
+  // Si el cliente paga de más, se asume que es vuelto o excedente contable. (SC-3.4)
+  if (totalPaid < computedTotal - tolerance) {
     throw new Error(
-      `El total pagado ($${totalPaid.toFixed(2)}) no coincide con el total calculado ($${computedTotal.toFixed(2)}). ` +
+      `El total pagado ($${totalPaid.toFixed(2)}) es insuficiente para cubrir el total calculado ($${computedTotal.toFixed(2)}). ` +
       `Diferencia: $${Math.abs(totalPaid - computedTotal).toFixed(2)} (tolerancia: $${tolerance.toFixed(2)}). ` +
       'Recalculá el total antes de confirmar.'
     );
@@ -71,10 +73,10 @@ function validatePayments(paymentBreakdown, computedTotal) {
  * @param {object} user — usuario autenticado (req.user)
  */
 const create = async (saleData, user) => {
-  const { 
-    items, 
-    clientId, 
-    paymentBreakdown, 
+  const {
+    items,
+    clientId,
+    paymentBreakdown,
     amount: frontendSubtotal,
     preferredRuleIds = [],
     excludedRuleIds = []
@@ -122,7 +124,7 @@ const create = async (saleData, user) => {
       storeId: effectiveStoreId,
       permission: 'account.payment',
     });
-    
+
     if (!hasPermission && user.rbacRole?.name !== 'SISTEMA') {
       throw new Error('No tenés permisos para realizar ventas a Cuenta Corriente.');
     }
@@ -178,10 +180,10 @@ const create = async (saleData, user) => {
     const cartItems = items.map(item => {
       const product = productMap.get(item.id);
       return {
-        productId:  item.id,
+        productId: item.id,
         categoryId: product.categoryId ?? undefined,
-        quantity:   item.quantity,
-        unitPrice:  product.price,   // SEGURIDAD: precio de DB, nunca del frontend
+        quantity: item.quantity,
+        unitPrice: product.price,   // SEGURIDAD: precio de DB, nunca del frontend
       };
     });
 
@@ -239,6 +241,7 @@ const create = async (saleData, user) => {
       storeId: effectiveStoreId,
       clientId: clientId ?? null,
       paymentMethods: paymentMethods ?? [],
+      paymentBreakdown: paymentBreakdown ?? [],
       items: cartItems,
     };
     const universalResult = universalRules.length > 0
@@ -285,7 +288,7 @@ const create = async (saleData, user) => {
       // Incrementar usedUnits atómicamente dentro de la tx
       await tx.discountRule.update({
         where: { id: rule.id },
-        data:  { usedUnits: { increment: qty } },
+        data: { usedUnits: { increment: qty } },
       });
     }
 
@@ -302,14 +305,14 @@ const create = async (saleData, user) => {
     // Re-aplicar el CAP sobre el total recalculado y ajustar desgloses
     const maxDiscountPct = store?.maxDiscountPct ?? 80;
     const maxAllowedDiscount = parseFloat(((computedSubtotal * maxDiscountPct) / 100).toFixed(2));
-    
+
     // LOG de auditoría (Debug en Transacción)
     console.log(`[SALE CAP DEBUG] Store: ${effectiveStoreId} | MaxPct: ${maxDiscountPct} | Subtotal: ${computedSubtotal} | CurrentDisc: ${discountTotal} | MaxAllowed: ${maxAllowedDiscount}`);
 
     if (discountTotal > maxAllowedDiscount) {
       const ratio = maxAllowedDiscount / discountTotal;
       let adjustedSum = 0;
-      
+
       discountResult.appliedDiscounts = discountResult.appliedDiscounts.map((d, index) => {
         // Ajuste por diferencia de redondeo en el último elemento
         if (index === discountResult.appliedDiscounts.length - 1) {
@@ -333,20 +336,24 @@ const create = async (saleData, user) => {
     // EXCEPCIÓN: Si hay pago parcial por Cuenta Corriente, el total del breakdown
     // incluye el monto CC (que se registra como deuda), por lo que la suma sigue
     // siendo igual al total. Solo se omite la validación si hay CC puro (paidAmount=0).
-    const ccBreakdown  = paymentBreakdown.find(p => p.method === 'CUENTA_CORRIENTE');
-    const ccAmount     = ccBreakdown ? ccBreakdown.amount : 0;
-    const cashPaid     = parseFloat((computedFinalTotal - ccAmount).toFixed(2));
+    const ccBreakdown = paymentBreakdown.find(p => p.method === 'CUENTA_CORRIENTE');
+    const ccAmount = ccBreakdown ? ccBreakdown.amount : 0;
+    const cashPaid = parseFloat((computedFinalTotal - ccAmount).toFixed(2));
 
     if (!hasCCPayment) {
       // Venta normal: suma total debe coincidir exactamente
       validatePayments(paymentBreakdown, computedFinalTotal);
     } else {
-      // CC: solo validamos los métodos no-CC (dinero real) suman lo correcto
+      // CC: solo validamos que los métodos no-CC (dinero real) sean SUFICIENTES para cubrir lo esperado. (SC-3.4)
       const nonCCPayments = paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE');
-      const nonCCTotal    = nonCCPayments.reduce((s, p) => s + p.amount, 0);
-      if (Math.abs(nonCCTotal - cashPaid) > Math.max(0.01, cashPaid * 0.001)) {
+      const nonCCTotal = nonCCPayments.reduce((s, p) => s + p.amount, 0);
+
+      const tolerance = Math.max(0.01, cashPaid * 0.001);
+
+      if (nonCCTotal < cashPaid - tolerance) {
         throw new Error(
-          `Los medios de pago no CC ($${nonCCTotal.toFixed(2)}) no coinciden con el saldo a abonar ($${cashPaid.toFixed(2)}).`
+          `Los pagos en efectivo/tarjeta ($${nonCCTotal.toFixed(2)}) son insuficientes. ` +
+          `Se esperaba al menos $${cashPaid.toFixed(2)} (Total $${computedFinalTotal.toFixed(2)} - CC $${ccAmount.toFixed(2)}).`
         );
       }
     }
@@ -362,28 +369,28 @@ const create = async (saleData, user) => {
     // ── PASO 7: Crear la orden con totales del motor ──────────────
     const order = await tx.order.create({
       data: {
-        storeId:        effectiveStoreId,
-        userId:         user.id || null,
+        storeId: effectiveStoreId,
+        userId: user.id || null,
         cashRegisterId: currentRegister.id,
-        clientId:       clientId || null,
-        amount:         computedFinalTotal,       // Motor, no frontend
-        amoutPayed:     parseFloat(cashPaid.toFixed(2)),
-        amoutToPaid:    parseFloat(ccAmount.toFixed(2)),
-        discountTotal:  parseFloat(discountTotal.toFixed(2)),
-        paymentMethod:  paymentMethodSummary,
-        status:         'completed',
-        statusPayment:  orderStatusPayment,
+        clientId: clientId || null,
+        amount: computedFinalTotal,       // Motor, no frontend
+        amoutPayed: parseFloat(cashPaid.toFixed(2)),
+        amoutToPaid: parseFloat(ccAmount.toFixed(2)),
+        discountTotal: parseFloat(discountTotal.toFixed(2)),
+        paymentMethod: paymentMethodSummary,
+        status: 'completed',
+        statusPayment: orderStatusPayment,
         orderDetails: {
           create: cartItems.map(item => ({
             productId: item.productId,
-            quantity:  item.quantity,
-            price:     item.unitPrice,            // Precio de DB, no frontend
+            quantity: item.quantity,
+            price: item.unitPrice,            // Precio de DB, no frontend
           })),
         },
       },
       include: {
-        client:       true,
-        user:         true,
+        client: true,
+        user: true,
         orderDetails: { include: { product: true } },
       },
     });
@@ -393,9 +400,9 @@ const create = async (saleData, user) => {
     for (const payment of paymentBreakdown) {
       await tx.orderPayment.create({
         data: {
-          orderId:       order.id,
+          orderId: order.id,
           paymentMethod: payment.method,
-          amount:        payment.amount,
+          amount: payment.amount,
         },
       });
     }
@@ -404,12 +411,12 @@ const create = async (saleData, user) => {
     let ccMovement = null;
     if (hasCCPayment && ccAmount > 0) {
       const ccResult = await currentAccountServices.addSaleDebt(tx, {
-        orderId:     order.id,
+        orderId: order.id,
         clientId,
-        storeId:     effectiveStoreId,
-        userId:      user.id,
+        storeId: effectiveStoreId,
+        userId: user.id,
         totalAmount: computedFinalTotal,
-        paidAmount:  cashPaid,
+        paidAmount: cashPaid,
       });
       ccMovement = ccResult.movement;
     }
@@ -420,26 +427,26 @@ const create = async (saleData, user) => {
     // usando la DiscountRule como source of truth.
     async function normalizeAppliedDiscount(orderId, applied) {
       if (applied.amount <= 0) return null;
-      
+
       // Buscar la regla para obtener metadata
       const rule = await tx.discountRule.findUnique({
         where: { id: applied.ruleId },
-        select: { 
-          id: true, 
-          type: true, 
-          layer: true, 
-          percentage: true, 
+        select: {
+          id: true,
+          type: true,
+          layer: true,
+          percentage: true,
           name: true,
           description: true,
           engineVersion: true
         },
       });
-      
+
       if (!rule) {
         console.warn(`AppliedDiscount: rule ${applied.ruleId} no encontrada, saltando`);
         return null;
       }
-      
+
       // Derivar layer si no existe (para universales)
       let layer = rule.layer;
       if (!layer && rule.engineVersion === 'universal') {
@@ -447,16 +454,16 @@ const create = async (saleData, user) => {
         // esto ya debería estar en la regla, pero fallback
         layer = applied.productId ? 'ITEM' : 'ORDER';
       }
-      
+
       // type puede ser null para universales - usar null en vez de inventar
       const type = rule.type;
-      
+
       // percentage real: usar el de la regla (puede ser diferente al aplicado si hay topes)
       const percentage = rule.percentage;
-      
+
       // reason:优先 nombre de regla, luego descripción, luego default
       const reason = rule.name || rule.description || `Descuento ${rule.id}`;
-      
+
       return {
         orderId,
         discountRuleId: applied.ruleId,
@@ -475,7 +482,7 @@ const create = async (saleData, user) => {
     for (const applied of discountResult.appliedDiscounts) {
       const normalized = await normalizeAppliedDiscount(order.id, applied);
       if (!normalized) continue;
-      
+
       await tx.appliedDiscount.create({
         data: normalized,
       });
@@ -487,39 +494,39 @@ const create = async (saleData, user) => {
 
       const updated = await tx.product.update({
         where: { id: item.productId },
-        data:  { stock: { decrement: item.quantity } },
+        data: { stock: { decrement: item.quantity } },
       });
 
       await tx.stockHistory.create({
         data: {
-          storeId:        effectiveStoreId,
-          productId:      item.productId,
-          userId:         user.id || null,
-          type:           'SALE',
+          storeId: effectiveStoreId,
+          productId: item.productId,
+          userId: user.id || null,
+          type: 'SALE',
           previousStock,
           movementAmount: -item.quantity,
-          currentStock:   updated.stock,
-          description:    `Venta POS #${order.id.slice(-6)}${user.isSimulating ? ' (Simulada por SISTEMA)' : ''}`,
+          currentStock: updated.stock,
+          description: `Venta POS #${order.id.slice(-6)}${user.isSimulating ? ' (Simulada por SISTEMA)' : ''}`,
         },
       });
     }
 
     // ── Respuesta ─────────────────────────────────────────────────
-    
+
     return {
       ...order,
-      orderPayments:    paymentBreakdown,
+      orderPayments: paymentBreakdown,
       discountSummary: {
         originalTotal: parseFloat(computedSubtotal.toFixed(2)),
         discountTotal: parseFloat(discountTotal.toFixed(2)),
-        finalTotal:    computedFinalTotal,
-        applied:       discountResult.appliedDiscounts,
-        conditional:   discountResult.conditionalDiscounts,
-        warnings:      discountResult.warnings,
+        finalTotal: computedFinalTotal,
+        applied: discountResult.appliedDiscounts,
+        conditional: discountResult.conditionalDiscounts,
+        warnings: discountResult.warnings,
       },
       currentAccount: ccMovement ? {
-        paidAmount:  cashPaid,
-        debtAmount:  ccAmount,
+        paidAmount: cashPaid,
+        debtAmount: ccAmount,
         balanceAfter: ccMovement.balanceAfter,
       } : null,
     };
@@ -532,36 +539,36 @@ const create = async (saleData, user) => {
 // ─────────────────────────────────────────────────────────────────
 
 const getAll = async (user) => {
-  const isSistema  = user.role === 'SISTEMA' || user.isSistema;
-  const canSeeAll  = isSistema && !user.isGlobalOverride;
+  const isSistema = user.role === 'SISTEMA' || user.isSistema;
+  const canSeeAll = isSistema && !user.isGlobalOverride;
   const whereClause = canSeeAll ? {} : { storeId: user.storeId };
 
   return await prisma.order.findMany({
-    where:   whereClause,
+    where: whereClause,
     orderBy: { createdAt: 'desc' },
     include: {
-      client:          true,
-      user:            true,
-      orderDetails:    { include: { product: true } },
-      orderPayments:   true,
+      client: true,
+      user: true,
+      orderDetails: { include: { product: true } },
+      orderPayments: true,
       appliedDiscounts: true,
     },
   });
 };
 
 const getById = async (id, user) => {
-  
+
   const whereClause = user.storeId
     ? { id: { endsWith: id }, storeId: user.storeId }
     : { id: { endsWith: id } };
 
   const order = await prisma.order.findFirst({
-    where:   whereClause,
+    where: whereClause,
     include: {
-      client:          true,
-      user:            true,
-      orderDetails:    { include: { product: true } },
-      orderPayments:   true,
+      client: true,
+      user: true,
+      orderDetails: { include: { product: true } },
+      orderPayments: true,
       appliedDiscounts: {
         include: {
           discountRule: true, // Traer la regla para obtener nombre y percentage
@@ -586,7 +593,7 @@ const getById = async (id, user) => {
     const name = d.discountRule?.name || d.discountRule?.description || d.reason || `Descuento`;
     // Usar percentage de la regla, sino el guardado
     const percentage = d.discountRule?.percentage ?? d.percentage;
-    
+
     return {
       ...d,
       name,
@@ -599,10 +606,10 @@ const getById = async (id, user) => {
     discountSummary: {
       originalTotal: parseFloat((orderDetailsTotal + discountTotal).toFixed(2)),
       discountTotal: parseFloat(discountTotal.toFixed(2)),
-      finalTotal:    parseFloat(finalTotal.toFixed(2)),
-      applied:       enrichedDiscounts,
-      conditional:   [],
-      warnings:      [],
+      finalTotal: parseFloat(finalTotal.toFixed(2)),
+      applied: enrichedDiscounts,
+      conditional: [],
+      warnings: [],
     },
   };
 };
@@ -671,7 +678,7 @@ const cancel = async (orderId, password, user) => {
     const cancelledOrder = await tx.order.update({
       where: { id: orderId },
       data: {
-        status:        'CANCELLED',
+        status: 'CANCELLED',
         statusPayment: 'cancelled',
       },
     });
@@ -682,19 +689,19 @@ const cancel = async (orderId, password, user) => {
 
       const updatedProduct = await tx.product.update({
         where: { id: detail.productId },
-        data:  { stock: { increment: detail.quantity } },
+        data: { stock: { increment: detail.quantity } },
       });
 
       await tx.stockHistory.create({
         data: {
-          storeId:        order.storeId,
-          productId:      detail.productId,
-          userId:         user.id || null,
-          type:           'RETURN',
+          storeId: order.storeId,
+          productId: detail.productId,
+          userId: user.id || null,
+          type: 'RETURN',
           previousStock,
           movementAmount: detail.quantity,   // Positivo: se devuelve al stock
-          currentStock:   updatedProduct.stock,
-          description:    `Devolución por anulación de venta #${orderId.slice(-6).toUpperCase()}`,
+          currentStock: updatedProduct.stock,
+          description: `Devolución por anulación de venta #${orderId.slice(-6).toUpperCase()}`,
         },
       });
     }
@@ -704,3 +711,5 @@ const cancel = async (orderId, password, user) => {
 };
 
 module.exports = { create, getAll, getById, cancel };
+
+// REFRESH: Forzando reinicio para asegurar carga de validación flexible (SC-3.4)

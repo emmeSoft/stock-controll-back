@@ -52,10 +52,10 @@ function filterByVigency(rules, now = new Date()) {
   return rules.filter(rule => {
     const startsAt = rule.startsAt ? new Date(rule.startsAt) : null;
     const endsAt = rule.endsAt ? new Date(rule.endsAt) : null;
-    
+
     if (startsAt && now < startsAt) return false;
     if (endsAt && now > endsAt) return false;
-    
+
     return true;
   });
 }
@@ -68,14 +68,14 @@ function filterByVigency(rules, now = new Date()) {
 function splitByLayer(rules) {
   const itemRules = [];
   const orderRules = [];
-  
+
   for (const rule of rules) {
     const conditions = rule.conditionsUniversal ?? {};
     const target = conditions.target;
-    
+
     // Verificar si el target tiene contenido real (productIds o categoryIds)
     const hasTargetContent = target && (target.productIds?.length > 0 || target.categoryIds?.length > 0);
-    
+
     // Si tiene target con contenido real → ITEM_LEVEL
     // Si target es null, undefined, o vacío → ORDER_LEVEL
     if (hasTargetContent) {
@@ -84,7 +84,7 @@ function splitByLayer(rules) {
       orderRules.push(rule);
     }
   }
-  
+
   return { itemRules, orderRules };
 }
 
@@ -94,34 +94,65 @@ function splitByLayer(rules) {
  * @param {Object} context - { clientId, paymentMethods, orderSubtotal }
  * @returns {boolean} true si cumple las condiciones
  */
-function validateTicketConditions(ticketConditions, context) {
+function validateTicketConditions(ticketConditions, context, rule = {}) {
   if (!ticketConditions) return true;
-  
+
   const { paymentMethods, minAmount, allClients, clientIds } = ticketConditions;
-  
-  // paymentMethods: si está definido, debe cumplir al menos uno
+  const allowPartial = rule.allowPartial ?? false;
+
+  // ── 1. Validación de Métodos de Pago (El Cambio Clave) ──────────
   if (paymentMethods?.length > 0) {
-    const hasPaymentMatch = paymentMethods.some(pm => 
-      context.paymentMethods?.includes(pm)
-    );
-    if (!hasPaymentMatch) return false;
+    // Si no hay desglose, caemos en la lógica binaria anterior (seguridad)
+    if (!context.paymentBreakdown || context.paymentBreakdown.length === 0) {
+      const hasPaymentMatch = paymentMethods.some(pm =>
+        context.paymentMethods?.includes(pm)
+      );
+      if (!hasPaymentMatch) return false;
+
+      // En modo binario, asumimos impacto total si coincide
+      rule._matchingAmount = context.orderSubtotal;
+    } else {
+      // Cálculo preciso: cuánta plata entra por los medios válidos.
+      // Los montos del breakdown son los importes EXPLÍCITOS ingresados por el usuario.
+      // El modo no-split siempre manda productsTotal (ver DiscountSummaryModal),
+      // por lo que no hay riesgo de referencia circular.
+      // Usamos baseAmount (el valor BRUTO que ese pago representa) cuando existe.
+      // Esto evita la referencia circular: si el front envía el neto como amount,
+      // el descuento se calcularía sobre el neto y el resultado nunca cerraría.
+      // baseAmount es retrocompatible: si no viene, cae a amount (comportamiento anterior).
+      const matchingAmount = context.paymentBreakdown
+        .filter(p => paymentMethods.includes(p.method))
+        .reduce((sum, p) => sum + (p.baseAmount ?? p.amount), 0);
+
+      if (matchingAmount <= 0) return false;
+
+      // Si allowPartial es false, el pago debe cubrir TODO el subtotal
+      if (!allowPartial && matchingAmount < context.orderSubtotal - 0.01) {
+        return false;
+      }
+
+      // Guardamos el monto para que el calculador sepa sobre qué aplicar el %
+      rule._matchingAmount = Math.min(matchingAmount, context.orderSubtotal);
+    }
+  } else {
+    // Si la regla no tiene restricción de pago, aplica sobre el total
+    rule._matchingAmount = context.orderSubtotal;
   }
-  
-  // minAmount: si está definido, el subtotal debe ser >= minAmount
+
+  // ── 2. minAmount: el subtotal debe ser >= minAmount ──────────────
   if (minAmount > 0 && context.orderSubtotal < minAmount) {
     return false;
   }
-  
-  // allClients: si es true, cualquier cliente aplica
+
+  // ── 3. allClients / clientIds ────────────────────────────────────
   if (allClients === true) return true;
-  
-  // clientIds: si está definido, el cliente debe estar en la lista
+
   if (clientIds?.length > 0) {
     if (!context.clientId || !clientIds.includes(context.clientId)) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -134,7 +165,7 @@ function validateTicketConditions(ticketConditions, context) {
 function filterOrderRulesByTicketConditions(orderRules, context) {
   return orderRules.filter(rule => {
     const conditions = rule.conditionsUniversal ?? {};
-    return validateTicketConditions(conditions.ticketConditions, context);
+    return validateTicketConditions(conditions.ticketConditions, context, rule);
   });
 }
 
@@ -147,24 +178,24 @@ function filterOrderRulesByTicketConditions(orderRules, context) {
 function evaluateUniversal(context, rules) {
   const now = context.now ?? new Date();
   const items = context.items ?? [];
-  
+
   // Preparar items con originalSubtotal calculado
   const itemsWithSubtotal = items.map(item => ({
     ...item,
     originalSubtotal: item.originalSubtotal ?? (item.unitPrice * item.quantity),
   }));
-  
+
   // Paso 1: Filtrar por vigencia
   const vigenteRules = filterByVigency(rules, now);
-  
+
   // Paso 2: Separar por capa
   const { itemRules, orderRules } = splitByLayer(vigenteRules);
-  
+
   // Calcular subtotal original
   const originalTotal = itemsWithSubtotal.reduce((sum, item) => {
     return sum + item.originalSubtotal;
   }, 0);
-  
+
   // Paso 3: Evaluar ITEM_LEVEL por cada item
   const itemsWithDiscounts = itemsWithSubtotal.map(item => {
     // Filtrar reglas que aplican a este item
@@ -172,10 +203,10 @@ function evaluateUniversal(context, rules) {
       const impact = simulateMonetaryImpact(rule, item);
       return impact > 0;
     });
-    
+
     // Encontrar la mejor regla (mayor impacto monetario)
     const bestRule = findBestItemRule(applicableItemRules, item);
-    
+
     if (!bestRule) {
       const originalSubtotal = item.originalSubtotal ?? (item.unitPrice * item.quantity);
       return {
@@ -187,47 +218,41 @@ function evaluateUniversal(context, rules) {
         appliedRule: null,
       };
     }
-    
+
     // Aplicar descuento
     const conditions = bestRule.conditionsUniversal ?? {};
     const maxUnits = conditions.constraints?.maxUnits;
     return applyDiscount(item, bestRule, maxUnits);
   });
-  
+
   // Paso 4: Calcular residual subtotal
   const residualSubtotal = calculateResidualSubtotal(itemsWithDiscounts);
-  
+
   // Paso 5: Evaluar ORDER_LEVEL sobre el residual
   const contextWithResidual = {
     ...context,
     orderSubtotal: residualSubtotal,
   };
-  
+
   const validOrderRules = filterOrderRulesByTicketConditions(orderRules, contextWithResidual);
   const orderDiscountResult = resolveOrderDiscounts(validOrderRules, residualSubtotal);
-  
+
   let orderDiscountAmount = 0;
   let orderDiscountRule = null;
   let appliedOrderDiscounts = [];
-  
+
   if (orderDiscountResult) {
     orderDiscountAmount = orderDiscountResult.amount;
     const mainRule = orderDiscountResult.rule;
-    
+
     if (orderDiscountResult.isCombinable && orderDiscountResult.combinedRules) {
-      // AXIOMA: Las reglas combinables se aplican de forma iterativa (en cascada)
-      // para que el desglose refleje el impacto REAL de cada una. (SC-2.2)
-      let tempTotal = residualSubtotal;
-      appliedOrderDiscounts = orderDiscountResult.combinedRules.map(r => {
-        const impact = parseFloat((tempTotal * ((r.percentage ?? 0) / 100)).toFixed(2));
-        tempTotal -= impact;
-        return {
-          ruleId: r.id,
-          amount: impact,
-          type: 'ORDER',
-        };
-      });
-      
+      appliedOrderDiscounts = orderDiscountResult.combinedRules.map(r => ({
+        ...r,
+        ruleId: r.id,
+        amount: r._calculatedImpact,
+        type: 'ORDER',
+      }));
+
       orderDiscountRule = {
         ruleId: mainRule.id,
         amount: orderDiscountAmount,
@@ -235,25 +260,25 @@ function evaluateUniversal(context, rules) {
         combinedCount: orderDiscountResult.combinedRules.length,
       };
     } else {
-      // Solo una regla (no combinable)
       orderDiscountRule = {
         ruleId: mainRule.id,
         amount: orderDiscountAmount,
         isCombinable: false,
       };
-      
+
       appliedOrderDiscounts.push({
+        ...mainRule,
         ruleId: mainRule.id,
         amount: orderDiscountAmount,
         type: 'ORDER',
       });
     }
   }
-  
+
   // Paso 6: Calcular totales finales
   const finalTotal = Math.max(residualSubtotal - orderDiscountAmount, GUARD_MIN_PRICE);
   const discountTotal = originalTotal - finalTotal;
-  
+
   // Paso 7: Compilar resultados
   const appliedDiscounts = itemsWithDiscounts
     .filter(item => item.appliedRule)
@@ -264,12 +289,12 @@ function evaluateUniversal(context, rules) {
       amount: item.discountAmount,
       type: 'ITEM',
     }));
-  
+
   // Agregar descuentos ORDER (puede ser uno o varios si son combinables)
   if (appliedOrderDiscounts.length > 0) {
     appliedDiscounts.push(...appliedOrderDiscounts);
   }
-  
+
   return {
     originalTotal,
     discountTotal,

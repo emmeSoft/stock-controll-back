@@ -21,28 +21,28 @@ const GUARD_MIN_PRICE = 0.01;
 function simulateMonetaryImpact(rule, item) {
   const conditions = rule.conditionsUniversal ?? {};
   const { target, itemConditions } = conditions;
-  
+
   // Verificar si aplica a este item (target check)
   if (target) {
     const { productIds, categoryIds } = target;
-    
+
     // Si tiene productIds específicos, verificar
     if (productIds?.length > 0 && !productIds.includes(item.productId)) {
       return 0;
     }
-    
+
     // Si tiene categoryIds específicos, verificar
     if (categoryIds?.length > 0 && (!item.categoryId || !categoryIds.includes(item.categoryId))) {
       return 0;
     }
   }
-  
+
   // Verificar itemConditions.minQuantity
   const minQuantity = itemConditions?.minQuantity ?? 0;
   if (item.quantity < minQuantity) {
     return 0;
   }
-  
+
   // Calcular descuento (item.originalSubtotal puede no existir aún)
   const originalSubtotal = item.originalSubtotal ?? (item.unitPrice * item.quantity);
   const percentage = rule.percentage ?? 0;
@@ -61,23 +61,23 @@ function simulateMonetaryImpact(rule, item) {
 function applyDiscount(item, rule, maxUnits) {
   const conditions = rule.conditionsUniversal ?? {};
   const { constraints } = conditions;
-  
+
   const unitPrice = item.unitPrice;
   const quantity = item.quantity;
   const originalSubtotal = item.originalSubtotal ?? (unitPrice * quantity);
   const percentage = rule.percentage ?? 0;
-  
+
   // Determinar cuántas unidades aplican al descuento
   const limitUnits = constraints?.maxUnits ?? quantity;
   const discountableQuantity = Math.min(quantity, limitUnits);
-  
+
   // Calcular monto de descuento solo sobre las unidades aplicables
   const discountableSubtotal = discountableQuantity * unitPrice;
   const discountAmount = discountableSubtotal * (percentage / 100);
-  
+
   // Precio final = original - descuento (simple)
   const finalPrice = originalSubtotal - discountAmount;
-  
+
   return {
     ...item,
     discountableQuantity,
@@ -111,10 +111,10 @@ function calculateResidualSubtotal(itemsWithDiscounts) {
  */
 function findBestItemRule(itemRules, item) {
   if (itemRules.length === 0) return null;
-  
+
   let bestRule = null;
   let bestImpact = 0;
-  
+
   for (const rule of itemRules) {
     const impact = simulateMonetaryImpact(rule, item);
     if (impact > bestImpact) {
@@ -122,7 +122,7 @@ function findBestItemRule(itemRules, item) {
       bestRule = rule;
     }
   }
-  
+
   return bestRule;
 }
 
@@ -138,76 +138,82 @@ function findBestItemRule(itemRules, item) {
  */
 function resolveOrderDiscounts(orderRules, residualSubtotal) {
   if (orderRules.length === 0) return null;
-  
-  // Por compatibilidad hacia atrás: si no existe isCombinable, asumir true
+
+  // Los combinables (isCombinable !== false) se suman en cascada
   const combinable = orderRules.filter(r => r.isCombinable !== false);
   const nonCombinable = orderRules.filter(r => r.isCombinable === false);
-  
-  // Los combinables se suman
-  let totalCombinablePct = 0;
-  let combinableRule = null;
-  
+
+  // 1. Calcular impacto de combinables
+  let totalCombinableAmount = 0;
+  let tempTotal = residualSubtotal;
+  const appliedCombinable = [];
+
   if (combinable.length > 0) {
-    totalCombinablePct = combinable.reduce((sum, r) => sum + (r.percentage ?? 0), 0);
-    combinableRule = combinable[0]; // Usar el primero como referencia (todos tienen mismo objetivo)
+    // Ordenamos por prioridad para la cascada
+    const sortedCombinable = [...combinable].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+    for (const r of sortedCombinable) {
+      // Si hay _matchingAmount (regla con restricción de medio de pago),
+      // siempre calcular el descuento sobre ese monto y no sobre el total.
+      // allowPartial controla elegibilidad (evaluator), no la base de cálculo.
+      const baseAmount = (r._matchingAmount !== undefined)
+        ? Math.min(r._matchingAmount, tempTotal)
+        : tempTotal;
+
+      const impact = parseFloat((baseAmount * ((r.percentage ?? 0) / 100)).toFixed(2));
+      totalCombinableAmount = parseFloat((totalCombinableAmount + impact).toFixed(2));
+      console.log(sortedCombinable);
+      console.log("aca", {
+        rule: r.name,
+        percentage: r.percentage,
+        tempTotal,
+        baseAmount,
+        impact
+      });
+      tempTotal = parseFloat((tempTotal - impact).toFixed(2));
+
+      appliedCombinable.push({ ...r, _calculatedImpact: impact });
+    }
   }
-  
-  // Los no combinables compiten entre sí
+
+  // 2. Calcular mejor no combinable
   let bestNonCombinable = null;
-  let bestNonCombinablePct = 0;
-  
+  let bestNonCombinableAmount = 0;
+
   if (nonCombinable.length > 0) {
-    bestNonCombinable = nonCombinable.reduce((best, r) => {
-      const pct = r.percentage ?? 0;
-      return pct > (best?.percentage ?? 0) ? r : best;
-    }, null);
-    bestNonCombinablePct = bestNonCombinable.percentage ?? 0;
+    for (const r of nonCombinable) {
+      // Mismo criterio que combinables: _matchingAmount manda cuando existe.
+      const baseAmount = (r._matchingAmount !== undefined)
+        ? Math.min(r._matchingAmount, residualSubtotal)
+        : residualSubtotal;
+
+      const impact = parseFloat((baseAmount * ((r.percentage ?? 0) / 100)).toFixed(2));
+      if (impact > bestNonCombinableAmount) {
+        bestNonCombinableAmount = impact;
+        bestNonCombinable = { ...r, _calculatedImpact: impact };
+      }
+    }
   }
-  
-  // Si no hay no combinables, devolver combinables
-  if (!bestNonCombinable) {
-    if (!combinableRule) return null;
+
+  // 3. Elegir el ganador (combinables vs mejor no combinable)
+  if (totalCombinableAmount >= bestNonCombinableAmount && totalCombinableAmount > 0) {
     return {
-      rule: combinableRule,
-      percentage: totalCombinablePct,
-      amount: residualSubtotal * (totalCombinablePct / 100),
+      rule: appliedCombinable[0],
+      amount: totalCombinableAmount,
       isCombinable: true,
-      combinedRules: combinable,
+      combinedRules: appliedCombinable,
     };
-  }
-  
-  // Si no hay combinables, devolver mejor no combinable
-  if (!combinableRule) {
+  } else if (bestNonCombinableAmount > 0) {
     return {
       rule: bestNonCombinable,
-      percentage: bestNonCombinablePct,
-      amount: residualSubtotal * (bestNonCombinablePct / 100),
+      amount: bestNonCombinableAmount,
       isCombinable: false,
       combinedRules: null,
     };
   }
-  
-  // Elegir el que mayor impacto tiene
-  const combinableImpact = residualSubtotal * (totalCombinablePct / 100);
-  const nonCombinableImpact = residualSubtotal * (bestNonCombinablePct / 100);
-  
-  if (combinableImpact >= nonCombinableImpact) {
-    return {
-      rule: combinableRule,
-      percentage: totalCombinablePct,
-      amount: combinableImpact,
-      isCombinable: true,
-      combinedRules: combinable,
-    };
-  } else {
-    return {
-      rule: bestNonCombinable,
-      percentage: bestNonCombinablePct,
-      amount: nonCombinableImpact,
-      isCombinable: false,
-      combinedRules: null,
-    };
-  }
+
+
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────

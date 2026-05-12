@@ -179,6 +179,8 @@ const getRegisterHistory = async (user) => {
             },
             orderPayments: true
         }
+        // NOTA: incluimos TODAS las órdenes (incluso CANCELLED) para auditoría,
+        // pero mandamos el status para que el frontend las excluya de los totales.
     });
 
     const movements = await prisma.cashMovement.findMany({

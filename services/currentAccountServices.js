@@ -100,8 +100,15 @@ const open = async (clientId, user) => {
  * Solo puede hacerlo ADMINISTRADOR o SISTEMA.
  */
 const close = async (accountId, user) => {
+  const where = { id: accountId };
+  if (user.storeId) {
+    where.storeId = user.storeId;
+  } else if (!user.isSistema) {
+    throw Object.assign(new Error('Debe seleccionar una tienda para realizar esta acción.'), { status: 400 });
+  }
+
   const account = await prisma.currentAccount.findFirst({
-    where: { id: accountId, storeId: user.storeId },
+    where,
     include: { client: { select: { firstName: true, lastName: true } } },
   });
 
@@ -132,7 +139,16 @@ const close = async (accountId, user) => {
  * Opcionalmente filtradas por status.
  */
 const getList = async (user, { status } = {}) => {
-  const where = { storeId: user.storeId };
+  const where = {};
+  
+  if (user.storeId) {
+    where.storeId = user.storeId;
+  } else if (!user.isSistema) {
+    // Si no hay storeId y no es SISTEMA, es un error de contexto
+    throw Object.assign(new Error('Debe seleccionar una tienda para ver las cuentas corrientes.'), { status: 400 });
+  }
+  // Si es SISTEMA y no hay storeId, 'where.storeId' no se agrega y trae todo.
+
   if (status) where.status = status;
 
   const accounts = await prisma.currentAccount.findMany({
@@ -157,8 +173,15 @@ const getList = async (user, { status } = {}) => {
  * Devuelve la cuenta corriente de un cliente específico (para el panel de cliente).
  */
 const getByClient = async (clientId, user) => {
+  const where = { clientId };
+  if (user.storeId) {
+    where.storeId = user.storeId;
+  } else if (!user.isSistema) {
+    throw Object.assign(new Error('Debe seleccionar una tienda para realizar esta acción.'), { status: 400 });
+  }
+
   const account = await prisma.currentAccount.findFirst({
-    where: { clientId, storeId: user.storeId },
+    where,
     include: {
       client: { select: { firstName: true, lastName: true, dni: true } },
       movements: {
@@ -183,8 +206,15 @@ const getByClient = async (clientId, user) => {
  * Detalle completo de una cuenta corriente con historial paginado.
  */
 const getDetail = async (accountId, user) => {
+  const where = { id: accountId };
+  if (user.storeId) {
+    where.storeId = user.storeId;
+  } else if (!user.isSistema) {
+    throw Object.assign(new Error('Debe seleccionar una tienda para realizar esta acción.'), { status: 400 });
+  }
+
   const account = await prisma.currentAccount.findFirst({
-    where: { id: accountId, storeId: user.storeId },
+    where,
     include: {
       client: { select: { id: true, firstName: true, lastName: true, dni: true, phoneNumber: true } },
       movements: {
