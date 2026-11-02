@@ -87,6 +87,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(require('./middlewares/decimalSerializer')); // Decimal -> Number en todas las respuestas JSON
 app.use(limiter); // Aplicar el limitador global
 
 // Rutas de autenticación con sus propios limitadores definidos en el router o aquí
