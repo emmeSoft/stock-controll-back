@@ -1,5 +1,6 @@
 const productsServices = require('../services/productsServices');
 const excelService = require('../services/excelService');
+const { toNumber } = require('../utils/money');
 
 const createProduct = async (req, res) => {
   const dataProduct = req.body;
@@ -128,7 +129,9 @@ const exportProducts = async (req, res) => {
       name: p.name,
       category: p.category ? p.category.name : 'Sin Categoría',
       stock: p.stock,
-      price: p.price,
+      // money-stock-integrity: p.price is still Decimal — Excel export
+      // bypasses the res.json serializer, so unwrap it explicitly.
+      price: toNumber(p.price),
       status: p.isActive ? 'Activo' : 'Inactivo'
     }));
 
