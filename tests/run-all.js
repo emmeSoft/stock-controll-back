@@ -18,6 +18,7 @@
 const tests = [
   './money/money.test.js',
   './money/serializer.test.js',
+  './money/excel-export.test.js',
   './integrity/stock-check.test.js',
   './concurrency/payment-race.test.js',
   './concurrency/close-race.test.js',
