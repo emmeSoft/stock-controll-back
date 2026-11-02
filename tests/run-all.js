@@ -25,6 +25,7 @@ const tests = [
   './concurrency/sale-race.test.js',
   './scenarios/cancel-reverses-debt.test.js',
   './concurrency/stock-edit-race.test.js',
+  './scenarios/movement-validation.test.js',
 ];
 
 async function main() {
