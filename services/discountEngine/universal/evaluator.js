@@ -41,6 +41,7 @@ const {
   resolveOrderDiscounts,
   GUARD_MIN_PRICE,
 } = require('./calculator');
+const { money, toNumber, sum, D } = require('../../../utils/money');
 
 /**
  * Filtra reglas por vigencia temporal.
@@ -120,14 +121,15 @@ function validateTicketConditions(ticketConditions, context, rule = {}) {
       // Esto evita la referencia circular: si el front envía el neto como amount,
       // el descuento se calcularía sobre el neto y el resultado nunca cerraría.
       // baseAmount es retrocompatible: si no viene, cae a amount (comportamiento anterior).
-      const matchingAmount = context.paymentBreakdown
-        .filter(p => paymentMethods.includes(p.method))
-        .reduce((sum, p) => sum + (p.baseAmount ?? p.amount), 0);
+      const matchingAmount = toNumber(sum(
+        context.paymentBreakdown.filter(p => paymentMethods.includes(p.method)),
+        (p) => p.baseAmount ?? p.amount
+      ));
 
       if (matchingAmount <= 0) return false;
 
       // Si allowPartial es false, el pago debe cubrir TODO el subtotal
-      if (!allowPartial && matchingAmount < context.orderSubtotal - 0.01) {
+      if (!allowPartial && money(matchingAmount).lt(money(context.orderSubtotal).minus(0.01))) {
         return false;
       }
 
@@ -179,10 +181,12 @@ function evaluateUniversal(context, rules) {
   const now = context.now ?? new Date();
   const items = context.items ?? [];
 
-  // Preparar items con originalSubtotal calculado
+  // Preparar items con originalSubtotal calculado.
+  // item.unitPrice puede ser un Prisma.Decimal real (viene de product.price) o
+  // un number plano (tests) — money() soporta ambos.
   const itemsWithSubtotal = items.map(item => ({
     ...item,
-    originalSubtotal: item.originalSubtotal ?? (item.unitPrice * item.quantity),
+    originalSubtotal: item.originalSubtotal ?? toNumber(money(item.unitPrice).times(item.quantity)),
   }));
 
   // Paso 1: Filtrar por vigencia
@@ -192,9 +196,7 @@ function evaluateUniversal(context, rules) {
   const { itemRules, orderRules } = splitByLayer(vigenteRules);
 
   // Calcular subtotal original
-  const originalTotal = itemsWithSubtotal.reduce((sum, item) => {
-    return sum + item.originalSubtotal;
-  }, 0);
+  const originalTotal = toNumber(sum(itemsWithSubtotal, (item) => item.originalSubtotal));
 
   // Paso 3: Evaluar ITEM_LEVEL por cada item
   const itemsWithDiscounts = itemsWithSubtotal.map(item => {
@@ -208,7 +210,7 @@ function evaluateUniversal(context, rules) {
     const bestRule = findBestItemRule(applicableItemRules, item);
 
     if (!bestRule) {
-      const originalSubtotal = item.originalSubtotal ?? (item.unitPrice * item.quantity);
+      const originalSubtotal = item.originalSubtotal ?? toNumber(money(item.unitPrice).times(item.quantity));
       return {
         ...item,
         originalSubtotal,
@@ -276,8 +278,8 @@ function evaluateUniversal(context, rules) {
   }
 
   // Paso 6: Calcular totales finales
-  const finalTotal = Math.max(residualSubtotal - orderDiscountAmount, GUARD_MIN_PRICE);
-  const discountTotal = originalTotal - finalTotal;
+  const finalTotal = toNumber(D.max(money(residualSubtotal).minus(orderDiscountAmount), money(GUARD_MIN_PRICE)));
+  const discountTotal = toNumber(money(originalTotal).minus(finalTotal));
 
   // Paso 7: Compilar resultados
   const appliedDiscounts = itemsWithDiscounts

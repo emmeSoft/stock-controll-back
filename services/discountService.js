@@ -14,6 +14,7 @@ const prisma = require('../db/database.prisma.js');
 const { validateConditions, getLayer, DEFAULT_PRIORITIES, runPipeline } = require('./discountEngine');
 const { runUniversalPipeline } = require('./discountEngine/universal');
 const { validateConditionsDual } = require('./discountEngine/validators');
+const { money, round, toNumber, sum } = require('../utils/money');
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers
@@ -74,13 +75,12 @@ function splitRulesByEngine(rules) {
  * @returns {Object} respuesta unificada
  */
 function mergeEngineResults(legacyResult, universalResult, originalTotal, allRules = [], maxDiscountPct = 80, preferredRuleIds = [], excludedRuleIds = []) {
-  console.log('🚀 [BLINDAJE] maxPct:', maxDiscountPct, 'Preferred:', preferredRuleIds, 'Excluded:', excludedRuleIds);
   const legacyDiscountTotal = legacyResult?.discountTotal ?? 0;
   const universalDiscountTotal = universalResult?.discountTotal ?? 0;
-  const rawDiscountTotal = legacyDiscountTotal + universalDiscountTotal;
+  const rawDiscountTotal = toNumber(money(legacyDiscountTotal).plus(universalDiscountTotal));
 
   // ── Aplicar tope de descuento de la tienda ──────────────────────
-  const maxAllowedDiscount = parseFloat(((originalTotal * maxDiscountPct) / 100).toFixed(2));
+  const maxAllowedDiscount = toNumber(money(originalTotal).times(maxDiscountPct).dividedBy(100));
 
   // Crear mapa de reglas para buscar nombres
   const ruleMap = new Map(allRules.map(r => [r.id, r]));
@@ -147,11 +147,11 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
       : originalTotal;
 
     const nominalImpact = hasPct
-      ? parseFloat(((baseForNominal * d.percentage) / 100).toFixed(2))
+      ? toNumber(money(baseForNominal).times(d.percentage).dividedBy(100))
       : (d.amount || 0);
 
     const isExcluded = excludedRuleIds.includes(d.ruleId);
-    const projectedNominal = parseFloat((nominalSpaceUsed + nominalImpact).toFixed(2));
+    const projectedNominal = toNumber(money(nominalSpaceUsed).plus(nominalImpact));
 
     if (!isExcluded && projectedNominal <= maxAllowedDiscount + 0.01) {
       // CABE NOMINALMENTE Y NO ESTA EXCLUIDA: Se pre-selecciona
@@ -181,18 +181,21 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
       const baseAmount = (rule.allowPartial && rule._matchingAmount !== undefined)
         ? Math.min(rule._matchingAmount, currentSubtotal)
         : currentSubtotal;
-      finalAmount = parseFloat((baseAmount * ((rule.percentage ?? 0) / 100)).toFixed(2));
+      finalAmount = toNumber(money(baseAmount).times(rule.percentage ?? 0).dividedBy(100));
     }
 
     const updatedRule = { ...rule, amount: finalAmount };
     recalculatedApplied.push(updatedRule);
 
-    currentSubtotal = parseFloat((currentSubtotal - finalAmount).toFixed(2));
-    totalRecalculatedDiscount = parseFloat((totalRecalculatedDiscount + finalAmount).toFixed(2));
+    currentSubtotal = toNumber(money(currentSubtotal).minus(finalAmount));
+    totalRecalculatedDiscount = toNumber(money(totalRecalculatedDiscount).plus(finalAmount));
   }
 
   // Actualizamos para el retorno
-  runningDiscount = totalRecalculatedDiscount;
+  // (declaración agregada como efecto trivial de tocar esta línea para Decimal-safety;
+  // la variable era global implícita en el código original — fuera de alcance como
+  // limpieza independiente, ver propuesta "hallazgos menores")
+  let runningDiscount = totalRecalculatedDiscount;
   finalApplied = recalculatedApplied;
 
   // Mensaje de blindaje
@@ -200,7 +203,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
 
   // Sincronizar el total real final
   const discountTotal = runningDiscount;
-  const finalTotal = Math.max(parseFloat((originalTotal - discountTotal).toFixed(2)), 0.01);
+  const finalTotal = Math.max(toNumber(money(originalTotal).minus(discountTotal)), 0.01);
 
   // Sincronizar array de items (PARA EL POS — SC-2.4)
   // Cada item debe reflejar solo si su regla "sobrevivió" a la poda.
@@ -214,7 +217,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
     return {
       ...item,
       discountAmount: finalItemDiscount,
-      finalPrice: parseFloat((item.originalSubtotal - finalItemDiscount).toFixed(2))
+      finalPrice: toNumber(money(item.originalSubtotal).minus(finalItemDiscount)),
     };
   });
 
@@ -226,7 +229,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
   return {
     originalTotal,
     discountTotal: runningDiscount,
-    finalTotal: parseFloat((originalTotal - runningDiscount).toFixed(2)),
+    finalTotal: toNumber(money(originalTotal).minus(runningDiscount)),
     appliedDiscounts: finalApplied,
     interchangeableDiscounts,
     capApplied,
@@ -529,8 +532,9 @@ const preview = async (storeId, body) => {
     select: { maxDiscountPct: true },
   });
 
-  // Calcular originalTotal una sola vez desde los items reales (SC-2.3)
-  const originalTotal = cartItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+  // Calcular originalTotal una sola vez desde los items reales (SC-2.3).
+  // i.unitPrice = product.price (Prisma.Decimal real) — nunca operador nativo.
+  const originalTotal = toNumber(sum(cartItems, (i) => money(i.unitPrice).times(i.quantity)));
 
   // ── Fase 2: Filtrado y Separación por Engine (SC-2.1) ─────────
   const allRulesRaw = await prisma.discountRule.findMany({

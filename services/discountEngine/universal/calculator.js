@@ -10,6 +10,8 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
+const { money, round, toNumber, sum } = require('../../../utils/money');
+
 const GUARD_MIN_PRICE = 0.01;
 
 /**
@@ -43,12 +45,14 @@ function simulateMonetaryImpact(rule, item) {
     return 0;
   }
 
-  // Calcular descuento (item.originalSubtotal puede no existir aún)
-  const originalSubtotal = item.originalSubtotal ?? (item.unitPrice * item.quantity);
+  // Calcular descuento (item.originalSubtotal puede no existir aún).
+  // item.unitPrice puede ser un Prisma.Decimal real (viene de product.price) o
+  // un number plano (tests) — money() soporta ambos.
+  const originalSubtotal = item.originalSubtotal ?? money(item.unitPrice).times(item.quantity);
   const percentage = rule.percentage ?? 0;
-  const discountAmount = originalSubtotal * (percentage / 100);
+  const discountAmount = money(originalSubtotal).times(percentage).dividedBy(100);
 
-  return discountAmount;
+  return toNumber(discountAmount);
 }
 
 /**
@@ -62,30 +66,32 @@ function applyDiscount(item, rule, maxUnits) {
   const conditions = rule.conditionsUniversal ?? {};
   const { constraints } = conditions;
 
-  const unitPrice = item.unitPrice;
+  const unitPrice = money(item.unitPrice);
   const quantity = item.quantity;
-  const originalSubtotal = item.originalSubtotal ?? (unitPrice * quantity);
+  const originalSubtotal = money(item.originalSubtotal ?? unitPrice.times(quantity));
   const percentage = rule.percentage ?? 0;
 
   // Determinar cuántas unidades aplican al descuento
   const limitUnits = constraints?.maxUnits ?? quantity;
   const discountableQuantity = Math.min(quantity, limitUnits);
 
-  // Calcular monto de descuento solo sobre las unidades aplicables
-  const discountableSubtotal = discountableQuantity * unitPrice;
-  const discountAmount = discountableSubtotal * (percentage / 100);
+  // Calcular monto de descuento solo sobre las unidades aplicables.
+  // AppliedDiscount.amount se redondea HALF_UP a 2 decimales (decisión de
+  // rounding resuelta en el addendum de la propuesta).
+  const discountableSubtotal = unitPrice.times(discountableQuantity);
+  const discountAmount = round(discountableSubtotal.times(percentage).dividedBy(100));
 
   // Precio final = original - descuento (simple)
-  const finalPrice = originalSubtotal - discountAmount;
+  const finalPrice = toNumber(originalSubtotal.minus(discountAmount));
 
   return {
     ...item,
     discountableQuantity,
-    discountAmount,
+    discountAmount: discountAmount.toNumber(),
     finalPrice,
     appliedRule: {
       ruleId: rule.id,
-      amount: discountAmount,
+      amount: discountAmount.toNumber(),
     },
   };
 }
@@ -96,10 +102,8 @@ function applyDiscount(item, rule, maxUnits) {
  * @returns {number} Subtotal residual
  */
 function calculateResidualSubtotal(itemsWithDiscounts) {
-  return itemsWithDiscounts.reduce((sum, item) => {
-    // finalPrice ya es el total para todas las unidades de ese item
-    return sum + item.finalPrice;
-  }, 0);
+  // finalPrice ya es el total para todas las unidades de ese item
+  return toNumber(sum(itemsWithDiscounts, (item) => item.finalPrice));
 }
 
 /**
@@ -160,17 +164,9 @@ function resolveOrderDiscounts(orderRules, residualSubtotal) {
         ? Math.min(r._matchingAmount, tempTotal)
         : tempTotal;
 
-      const impact = parseFloat((baseAmount * ((r.percentage ?? 0) / 100)).toFixed(2));
-      totalCombinableAmount = parseFloat((totalCombinableAmount + impact).toFixed(2));
-      console.log(sortedCombinable);
-      console.log("aca", {
-        rule: r.name,
-        percentage: r.percentage,
-        tempTotal,
-        baseAmount,
-        impact
-      });
-      tempTotal = parseFloat((tempTotal - impact).toFixed(2));
+      const impact = toNumber(money(baseAmount).times(r.percentage ?? 0).dividedBy(100));
+      totalCombinableAmount = toNumber(money(totalCombinableAmount).plus(impact));
+      tempTotal = toNumber(money(tempTotal).minus(impact));
 
       appliedCombinable.push({ ...r, _calculatedImpact: impact });
     }
@@ -187,7 +183,7 @@ function resolveOrderDiscounts(orderRules, residualSubtotal) {
         ? Math.min(r._matchingAmount, residualSubtotal)
         : residualSubtotal;
 
-      const impact = parseFloat((baseAmount * ((r.percentage ?? 0) / 100)).toFixed(2));
+      const impact = toNumber(money(baseAmount).times(r.percentage ?? 0).dividedBy(100));
       if (impact > bestNonCombinableAmount) {
         bestNonCombinableAmount = impact;
         bestNonCombinable = { ...r, _calculatedImpact: impact };
