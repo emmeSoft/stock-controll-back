@@ -13,7 +13,11 @@ const createSale = async (req, res) => {
     const result = await salesServices.create(saleData, req.user);
     res.status(201).json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    // El guard atómico de stock (PASO 10 de salesServices.create) lanza
+    // { status: 409 } cuando otra venta concurrente se llevó el stock
+    // primero — sin este fallback, SIEMPRE se devolvía 400 sin importar el
+    // status real del error, y el 409 nunca llegaba al POS.
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
