@@ -1,5 +1,6 @@
 const prisma = require('../db/database.prisma');
 const excelService = require('../services/excelService');
+const { toNumber } = require('../utils/money');
 
 /**
  * GET /api/seller-performance
@@ -171,7 +172,10 @@ exports.exportPerformance = async (req, res) => {
       name: `${s.firstName} ${s.lastName}`,
       role: s.role,
       salesCount: s.salesCount,
-      totalAmount: s.totalAmount,
+      // money-stock-integrity: s.totalAmount derives from a Prisma
+      // aggregate (_sum.amount), still Decimal — Excel export bypasses the
+      // res.json serializer, so unwrap it explicitly.
+      totalAmount: toNumber(s.totalAmount),
       percentage: `${s.percentage}%`
     }));
 

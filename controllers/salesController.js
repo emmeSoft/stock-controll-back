@@ -1,5 +1,6 @@
 const salesServices = require('../services/salesServices');
 const excelService = require('../services/excelService');
+const { toNumber } = require('../utils/money');
 
 const createSale = async (req, res) => {
   try {
@@ -64,9 +65,14 @@ const exportSales = async (req, res) => {
       date: sale.createdAt,
       client: sale.client ? `${sale.client.firstName} ${sale.client.lastName}` : 'Consumidor Final',
       user: sale.user ? `${sale.user.firstName} ${sale.user.lastName}` : 'Sistema',
-      subtotal: sale.amount + sale.discountTotal,
-      discount: sale.discountTotal,
-      amount: sale.amount,
+      // money-stock-integrity: sale.amount/discountTotal are still
+      // Prisma.Decimal here (this handler streams via excelService, which
+      // bypasses the res.json Decimal->Number serializer). Native `+` on
+      // two Decimal objects string-concatenates instead of adding — wrap
+      // every money value with toNumber() before building the Excel row.
+      subtotal: toNumber(sale.amount) + toNumber(sale.discountTotal),
+      discount: toNumber(sale.discountTotal),
+      amount: toNumber(sale.amount),
       paymentMethod: sale.paymentMethod,
       status: sale.status
     }));
