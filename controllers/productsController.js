@@ -102,7 +102,11 @@ const adjustStock = async (req, res) => {
     const result = await productsServices.adjustStock(id, amount, description, req.user);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    // money-stock-integrity: same house convention as salesController —
+    // without `error.status`, the atomic guard's 409 would be silently
+    // downgraded to a generic 400 and the client could never tell "someone
+    // else changed the stock first" apart from "bad request".
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
