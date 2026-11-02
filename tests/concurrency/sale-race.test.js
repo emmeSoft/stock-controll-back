@@ -35,20 +35,33 @@ const prisma = new PrismaClient();
 // (sin `.status`, por lo tanto 400 por el fallback del controller) en vez
 // de llegar al guard atómico y recibir el 409 real — exactamente el mismo
 // patrón de "la carrera no corre de verdad en este Postgres local tan
-// rápido" que Unit 3 encontró y resolvió en `payment-race.test.js`. Se
-// reutiliza la misma técnica: un delay corto al INICIO del callback de
-// `$transaction`, solo durante la carrera, restaurado en `finally` — esto
-// ensancha la ventana para que ambas llamadas entren a su propia
-// transacción antes de que cualquiera de las dos llegue a comprometer su
-// escritura en PASO 10, forzando a que el `updateMany` atómico (no el
-// pre-check amable de PASO 1) sea quien decide la carrera.
+// rápido" que Unit 3 encontró en `payment-race.test.js`.
+//
+// Unit 3 originally forced the race with a FIXED DELAY at the entrance of
+// `$transaction`. That is inherently fragile — it only widens the window
+// enough if BOTH calls happen to reach the entrance within that fixed
+// time, which depends on how fast/slow the machine is at that moment and
+// flaked ~40% of the time under load. This test uses a deterministic
+// two-party barrier instead: each call increments a shared counter upon
+// entering `$transaction`, then awaits a shared Promise that resolves only
+// once the counter reaches the expected party count (2, for this test).
+// Both calls are guaranteed to have reached the transaction entrance — by
+// construction, not by timing luck — before either proceeds into the
+// transaction body, forcing the atomic `updateMany` in PASO 10 (not the
+// friendly pre-check in PASO 1) to be the one that decides the race.
+// Restored immediately after the race, every run.
 const svcPrisma = require('../../db/database.prisma');
 const originalTransaction = svcPrisma.$transaction.bind(svcPrisma);
-function patchTransactionDelay(ms) {
+function patchTransactionBarrier(partyCount) {
+  let arrived = 0;
+  let releaseBarrier;
+  const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
   svcPrisma.$transaction = (fnOrArray, opts) => {
     if (typeof fnOrArray === 'function') {
       return originalTransaction(async (tx) => {
-        await new Promise((resolve) => setTimeout(resolve, ms));
+        arrived += 1;
+        if (arrived >= partyCount) releaseBarrier();
+        await barrier;
         return fnOrArray(tx);
       }, opts);
     }
@@ -139,7 +152,7 @@ async function main() {
       amount: 100,
     };
 
-    patchTransactionDelay(80);
+    patchTransactionBarrier(2);
     let results;
     try {
       results = await Promise.allSettled([

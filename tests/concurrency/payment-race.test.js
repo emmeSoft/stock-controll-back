@@ -30,17 +30,32 @@ const prisma = new PrismaClient();
 // atomic guard) rejects it with 400, never reaching the race at all. To
 // force the actual race this test exists to verify (both calls' reads
 // landing BEFORE either write commits, so both pre-checks pass and the
-// atomic `updateMany` guard is the real decider), we widen the window by
-// injecting a short delay at the entrance of `$transaction` — this only
-// affects the moment the WRITE happens, never the guard's own logic or
-// its SQL shape. Restored immediately after the race, every run.
+// atomic `updateMany` guard is the real decider), we need both parties to
+// reach the `$transaction` entrance before either is allowed to proceed
+// into the transaction body.
+//
+// A FIXED DELAY (e.g. "wait 80ms at the entrance") is fragile: it only
+// works if BOTH calls reach the entrance within that window, which depends
+// on how fast/slow the machine happens to be at that exact moment — this
+// flaked ~40% of the time under load (see payment-race.test.js history).
+// Instead, we use a deterministic two-party barrier: each call increments
+// a shared counter upon entering `$transaction`, then awaits a shared
+// Promise that resolves only once the counter reaches the expected party
+// count (2, for this test). This guarantees both calls have reached the
+// entrance — by construction, not by timing luck — before either proceeds.
+// Restored immediately after the race, every run.
 const svcPrisma = require('../../db/database.prisma');
 const originalTransaction = svcPrisma.$transaction.bind(svcPrisma);
-function patchTransactionDelay(ms) {
+function patchTransactionBarrier(partyCount) {
+  let arrived = 0;
+  let releaseBarrier;
+  const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
   svcPrisma.$transaction = (fnOrArray, opts) => {
     if (typeof fnOrArray === 'function') {
       return originalTransaction(async (tx) => {
-        await new Promise((resolve) => setTimeout(resolve, ms));
+        arrived += 1;
+        if (arrived >= partyCount) releaseBarrier();
+        await barrier;
         return fnOrArray(tx);
       }, opts);
     }
@@ -133,7 +148,7 @@ async function main() {
 
     const authUser = { id: user.id, storeId: store.id, isSistema: false };
 
-    patchTransactionDelay(80);
+    patchTransactionBarrier(2);
     let results;
     try {
       results = await Promise.allSettled([
