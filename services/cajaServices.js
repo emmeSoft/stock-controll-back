@@ -1,5 +1,6 @@
 const prisma = require('../db/database.prisma');
 const bcrypt = require('bcrypt');
+const { money, round, sum } = require('../utils/money');
 
 const MAX_DAYS = 30;
 const DEFAULT_DAYS = 7;
@@ -64,7 +65,7 @@ const openRegister = async (data, user) => {
         data: {
             store: { connect: { id: user.storeId } },
             openedByUser: { connect: { id: user.id } },
-            openingAmount: parseFloat(openingAmount),
+            openingAmount: round(openingAmount),
             status: 'OPEN',
             observation: user.isSimulating ? 'Apertura Simulada por SISTEMA' : null
         }
@@ -112,30 +113,32 @@ const closeRegister = async (data, user) => {
     });
     
     // Solo sumamos el efectivo para el arqueo de caja física
-    const ordersTotalEfectivo = orders.reduce((sum, order) => {
+    const ordersTotalEfectivo = sum(orders, (order) => {
         // Si hay desglose de pagos, sumamos solo lo que fue en efectivo
         if (order.orderPayments && order.orderPayments.length > 0) {
-            const cashPart = order.orderPayments
-                .filter(p => p.paymentMethod.toLowerCase() === 'efectivo')
-                .reduce((s, p) => s + p.amount, 0);
-            return sum + cashPart;
+            return sum(
+                order.orderPayments.filter(p => p.paymentMethod.toLowerCase() === 'efectivo'),
+                p => p.amount
+            );
         }
         // Fallback para órdenes antiguas sin desglose
         const isEfectivo = !order.paymentMethod || order.paymentMethod.toLowerCase() === 'efectivo';
-        return sum + (isEfectivo ? order.amoutPayed : 0);
-    }, 0);
+        return isEfectivo ? order.amoutPayed : 0;
+    });
 
     // 2. Obtener movimientos de caja manuales
     const movements = await prisma.cashMovement.findMany({
         where: { cashRegisterId: openRegister.id }
     });
 
-    const income = movements.filter(m => m.type === 'INCOME').reduce((sum, m) => sum + m.amount, 0);
-    const expense = movements.filter(m => m.type === 'EXPENSE').reduce((sum, m) => sum + m.amount, 0);
+    const income = sum(movements.filter(m => m.type === 'INCOME'), m => m.amount);
+    const expense = sum(movements.filter(m => m.type === 'EXPENSE'), m => m.amount);
 
-    // El monto esperado físico es: apertura + ventas en efectivo + ingresos ingresos manuales - retiros manuales
-    const expectedAmount = openRegister.openingAmount + ordersTotalEfectivo + income - expense;
-    const difference = parseFloat(closingAmount) - expectedAmount;
+    // El monto esperado físico es: apertura + ventas en efectivo + ingresos manuales - retiros manuales
+    const expectedAmount = round(
+        money(openRegister.openingAmount).plus(ordersTotalEfectivo).plus(income).minus(expense)
+    );
+    const difference = round(money(closingAmount).minus(expectedAmount));
 
     const closedCaja = await prisma.cashRegister.update({
         where: { id: openRegister.id },
@@ -143,11 +146,11 @@ const closeRegister = async (data, user) => {
             status: 'CLOSED',
             closedByUser: { connect: { id: user.id } },
             closedAt: new Date(),
-            closingAmount: parseFloat(closingAmount),
+            closingAmount: round(closingAmount),
             expectedAmount: expectedAmount,
             difference: difference,
-            observation: user.isSimulating 
-                ? `${observation || ''} (Simulada por SISTEMA)`.trim() 
+            observation: user.isSimulating
+                ? `${observation || ''} (Simulada por SISTEMA)`.trim()
                 : (observation || null)
         }
     });
@@ -267,40 +270,35 @@ const getAllRegisters = async (user, query = {}) => {
 
     // Map through the registers to calculate the totals per payment method
     const mappedRegisters = registers.map(reg => {
-        let totalEfectivo = 0;
-        let totalTransferencia = 0;
-        let totalTarjeta = 0;
-        let totalCuentaCorriente = 0;
+        let totalEfectivo = money(0);
+        let totalTransferencia = money(0);
+        let totalTarjeta = money(0);
+        let totalCuentaCorriente = money(0);
 
         reg.orders.forEach(order => {
             // Si la orden tiene desglose de pagos (OrderPayment), sumamos cada uno a su categoría
             if (order.orderPayments && order.orderPayments.length > 0) {
                 order.orderPayments.forEach(p => {
                     const method = p.paymentMethod.toLowerCase();
-                    if (method === 'efectivo') totalEfectivo += p.amount;
-                    else if (method === 'transferencia') totalTransferencia += p.amount;
-                    else if (method === 'tarjeta') totalTarjeta += p.amount;
-                    else if (method === 'cuenta_corriente') totalCuentaCorriente += p.amount;
-                    else totalEfectivo += p.amount;
+                    if (method === 'efectivo') totalEfectivo = totalEfectivo.plus(p.amount);
+                    else if (method === 'transferencia') totalTransferencia = totalTransferencia.plus(p.amount);
+                    else if (method === 'tarjeta') totalTarjeta = totalTarjeta.plus(p.amount);
+                    else if (method === 'cuenta_corriente') totalCuentaCorriente = totalCuentaCorriente.plus(p.amount);
+                    else totalEfectivo = totalEfectivo.plus(p.amount);
                 });
             } else {
                 // Fallback para órdenes antiguas basadas únicamente en paymentMethod
                 const method = order.paymentMethod ? order.paymentMethod.toLowerCase() : 'efectivo';
-                if (method === 'efectivo') totalEfectivo += order.amoutPayed;
-                else if (method === 'transferencia') totalTransferencia += order.amoutPayed;
-                else if (method === 'tarjeta') totalTarjeta += order.amoutPayed;
-                else if (method === 'cuenta_corriente') totalCuentaCorriente += order.amoutToPaid;
-                else totalEfectivo += order.amoutPayed;
+                if (method === 'efectivo') totalEfectivo = totalEfectivo.plus(order.amoutPayed);
+                else if (method === 'transferencia') totalTransferencia = totalTransferencia.plus(order.amoutPayed);
+                else if (method === 'tarjeta') totalTarjeta = totalTarjeta.plus(order.amoutPayed);
+                else if (method === 'cuenta_corriente') totalCuentaCorriente = totalCuentaCorriente.plus(order.amoutToPaid);
+                else totalEfectivo = totalEfectivo.plus(order.amoutPayed);
             }
         });
 
-        const totalIncome = reg.cashMovements
-            .filter(m => m.type === 'INCOME')
-            .reduce((sum, m) => sum + m.amount, 0);
-
-        const totalExpense = reg.cashMovements
-            .filter(m => m.type === 'EXPENSE')
-            .reduce((sum, m) => sum + m.amount, 0);
+        const totalIncome = sum(reg.cashMovements.filter(m => m.type === 'INCOME'), m => m.amount);
+        const totalExpense = sum(reg.cashMovements.filter(m => m.type === 'EXPENSE'), m => m.amount);
 
         return {
             ...reg,
