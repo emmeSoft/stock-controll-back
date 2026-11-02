@@ -6,7 +6,7 @@ const openRegister = async (req, res) => {
     const result = await cajaServices.openRegister(req.body, req.user);
     res.status(201).json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
@@ -15,7 +15,7 @@ const closeRegister = async (req, res) => {
     const result = await cajaServices.closeRegister(req.body, req.user);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 

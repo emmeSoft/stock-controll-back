@@ -7,7 +7,7 @@ const createMovement = async (req, res) => {
     const result = await movimientosServices.createMovement(req.body, req.user);
     res.status(201).json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
