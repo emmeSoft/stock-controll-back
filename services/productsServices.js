@@ -1,16 +1,27 @@
 const prisma = require(`../db/database.prisma`)
+const { money, round } = require('../utils/money');
 
 
 const create = async (dataProduct, user) => {
 
     // console.log('Creating product...');
 
-    const price = parseFloat(dataProduct.price);
+    // Decimal-safe parse: `money()` rejects garbage strings (parseFloat would
+    // silently accept "12.50abc" as 12.5) and represents NaN as a non-finite
+    // Decimal instead of throwing, so the existing validation below keeps
+    // its exact previous semantics (reject negative or invalid, allow 0).
+    let price;
+    try {
+        price = money(dataProduct.price);
+    } catch {
+        price = money(NaN);
+    }
     const stock = parseInt(dataProduct.stock);
 
-    if (isNaN(price) || price < 0) {
+    if (!price.isFinite() || price.lt(0)) {
         throw new Error("the Price cannot be a negative or invalid value");
     }
+    price = round(price);
 
     if (isNaN(stock) || stock < 0) {
         throw new Error("the Stock cannot be a negative or invalid value");
@@ -193,7 +204,20 @@ const update = async (id, dataProduct, user) => {
     }
 
     if ("price" in cleanData) {
-        cleanData.price = parseFloat(cleanData.price);
+        // Decimal-safe parse, same rule as `create()` (see comment there).
+        // Parity fix: `update()` previously had NO negative/invalid guard at
+        // all (plain `parseFloat`, relying on Prisma to reject NaN with an
+        // unfriendly error) — now matches `create()`'s validation exactly.
+        let price;
+        try {
+            price = money(cleanData.price);
+        } catch {
+            price = money(NaN);
+        }
+        if (!price.isFinite() || price.lt(0)) {
+            throw new Error("the Price cannot be a negative or invalid value");
+        }
+        cleanData.price = round(price);
     }
 
     if ("stock" in cleanData) {
@@ -220,6 +244,12 @@ const update = async (id, dataProduct, user) => {
         }
     });
 
+    // OUT OF SCOPE (money-stock-integrity): this `stock`-in-body path is
+    // unreachable from the current frontend (`Details.jsx` strips `stock`
+    // before the PUT; the only stock-editing UI calls the dedicated
+    // `adjustStock()` below instead) — left exactly as-is, read-then-write
+    // and all, per proposal.md's "Out of Scope" / product-owner decision.
+    // Deferred to a future deep-cleanup SDD change.
     if ("stock" in cleanData && cleanData.stock !== existingProduct.stock) {
         const difference = cleanData.stock - existingProduct.stock;
         await prisma.stockHistory.create({
@@ -267,21 +297,51 @@ const setActiveStatus = async (id, isActive, user) => {
 }
 
 const adjustStock = async (id, amount, description, user) => {
-    
-    const whereClause = user.storeId ? { id: id, storeId: user.storeId } : { id: id };
-    
-    return await prisma.$transaction(async (tx) => {
-        const existingProduct = await tx.product.findFirst({ where: whereClause });
-        if (!existingProduct) throw new Error(`Product with ID ${id} not found or access denied`);
 
-        const newStock = existingProduct.stock + amount;
-        if (newStock < 0) {
-            throw new Error(`El ajuste resulta en stock negativo. Stock actual: ${existingProduct.stock}`);
+    const storeScope = user.storeId ? { storeId: user.storeId } : {};
+
+    return await prisma.$transaction(async (tx) => {
+        // Existence/ownership pre-check — cheap, friendly 404 in the
+        // non-racing case (same role as the PASO 1 pre-check in
+        // salesServices.create). This read can be stale under a race, but
+        // that's fine: the atomic guard below, not this read, decides
+        // whether the delta is actually applied.
+        const existingProduct = await tx.product.findFirst({ where: { id, ...storeScope } });
+        if (!existingProduct) {
+            throw Object.assign(new Error(`Product with ID ${id} not found or access denied`), { status: 404 });
         }
 
-        const updatedProduct = await tx.product.update({
+        // Atomicidad: "hay stock suficiente para este delta" y el
+        // incremento/decremento son UN SOLO statement atómico a nivel DB
+        // (`updateMany` con `WHERE stock: { gte: -delta } }`), nunca un
+        // read-then-write — mismo idioma que PASO 10 de salesServices.create
+        // y los guards de currentAccountServices.registerPayment/close.
+        // `amount` ya es un delta con signo (nunca el valor absoluto) —
+        // confirmado: la única UI que ajusta stock (`StockAdjustModal.jsx` ->
+        // `useEntitySave.js:26`) llama siempre a este `PUT /products/:id/stock`
+        // dedicado con un delta, nunca al `update()` genérico.
+        const { count } = await tx.product.updateMany({
+            where: { id, ...storeScope, stock: { gte: -amount } },
+            data: { stock: { increment: amount } }
+        });
+
+        if (count === 0) {
+            // Re-leer el stock committeado actual para un mensaje preciso —
+            // el `existingProduct` pre-lectura puede estar obsoleto para
+            // este propósito (aunque nunca se usa para derivar el historial).
+            const current = await tx.product.findUnique({ where: { id }, select: { stock: true } });
+            throw Object.assign(
+                new Error(`El ajuste resulta en stock negativo. Stock actual: ${current?.stock ?? existingProduct.stock}`),
+                { status: 409 }
+            );
+        }
+
+        // `updateMany` solo devuelve { count } — re-leer SIEMPRE el estado
+        // post-escritura; previousStock/currentStock se derivan de este
+        // valor, nunca del `existingProduct` pre-lectura (mismo patrón que
+        // PASO 10 / registerPayment / close).
+        const updatedProduct = await tx.product.findUnique({
             where: { id },
-            data: { stock: newStock },
             include: {
                 Image: true,
                 category: {
@@ -294,13 +354,13 @@ const adjustStock = async (id, amount, description, user) => {
 
         await tx.stockHistory.create({
             data: {
-                store: { connect: { id: existingProduct.storeId } },
+                store: { connect: { id: updatedProduct.storeId } },
                 product: { connect: { id: id } },
                 user: user.id ? { connect: { id: user.id } } : undefined,
                 type: 'MANUAL_ADJUSTMENT',
-                previousStock: existingProduct.stock,
+                previousStock: updatedProduct.stock - amount,
                 movementAmount: amount,
-                currentStock: newStock,
+                currentStock: updatedProduct.stock,
                 description: description
             }
         });
