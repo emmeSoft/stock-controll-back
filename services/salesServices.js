@@ -17,6 +17,7 @@ const discountService = require('./discountService');
 const { runPipeline } = require('./discountEngine');
 const { runUniversalPipeline } = require('./discountEngine/universal');
 const currentAccountServices = require('./currentAccountServices');
+const { money, round, toNumber, sum, D } = require('../utils/money');
 
 
 // ─────────────────────────────────────────────────────────────────
@@ -34,21 +35,22 @@ function validatePayments(paymentBreakdown, computedTotal) {
   if (!paymentBreakdown || paymentBreakdown.length === 0) {
     throw new Error('Debe ingresar al menos un medio de pago.');
   }
-  const totalPaid = paymentBreakdown.reduce((sum, p) => sum + p.amount, 0);
+  const totalPaid = sum(paymentBreakdown, (p) => p.amount);
+  const total = money(computedTotal);
 
   // Tolerancia dinámica: max($0.01, 0.1% del total calculado).
   // Justificación: punto flotante acumula errores proporcionales al monto.
   // Una venta de $100.000 puede diferir $0.50 por redondeo legítimo de múltiples
   // descuentos; rechazarla por $0.01 sería un falso negativo.
   // El 0.1% sigue siendo lo suficientemente estricto para detectar manipulaciones reales.
-  const tolerance = Math.max(0.01, computedTotal * 0.001);
+  const tolerance = D.max(money(0.01), total.times(0.001));
 
   // SEGURIDAD: Solo validamos que el total pagado sea SUFICIENTE para cubrir el total calculado.
   // Si el cliente paga de más, se asume que es vuelto o excedente contable. (SC-3.4)
-  if (totalPaid < computedTotal - tolerance) {
+  if (totalPaid.lt(total.minus(tolerance))) {
     throw new Error(
-      `El total pagado ($${totalPaid.toFixed(2)}) es insuficiente para cubrir el total calculado ($${computedTotal.toFixed(2)}). ` +
-      `Diferencia: $${Math.abs(totalPaid - computedTotal).toFixed(2)} (tolerancia: $${tolerance.toFixed(2)}). ` +
+      `El total pagado ($${toNumber(totalPaid)}) es insuficiente para cubrir el total calculado ($${toNumber(total)}). ` +
+      `Diferencia: $${toNumber(totalPaid.minus(total).abs())} (tolerancia: $${toNumber(tolerance)}). ` +
       'Recalculá el total antes de confirmar.'
     );
   }
@@ -200,15 +202,15 @@ const create = async (saleData, user) => {
     if (frontendSubtotal === undefined || frontendSubtotal === null) {
       throw new Error('El campo `amount` (subtotal sin descuentos) es obligatorio para registrar una venta.');
     }
-    const backendBaseSubtotal = cartItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
-    const priceIntegrityTolerance = Math.max(0.01, backendBaseSubtotal * 0.001);
-    const priceIntegrityDiff = Math.abs(Number(frontendSubtotal) - backendBaseSubtotal);
-    if (priceIntegrityDiff > priceIntegrityTolerance) {
+    const backendBaseSubtotal = sum(cartItems, (i) => money(i.unitPrice).times(i.quantity));
+    const priceIntegrityTolerance = D.max(money(0.01), backendBaseSubtotal.times(0.001));
+    const priceIntegrityDiff = money(frontendSubtotal).minus(backendBaseSubtotal).abs();
+    if (priceIntegrityDiff.gt(priceIntegrityTolerance)) {
       throw new Error(
         `Desincronización de precios detectada: el valor base en pantalla ` +
-        `($${Number(frontendSubtotal).toFixed(2)}) no coincide con los precios ` +
-        `actuales del sistema ($${backendBaseSubtotal.toFixed(2)}). ` +
-        `Diferencia: $${priceIntegrityDiff.toFixed(2)} (tolerancia: $${priceIntegrityTolerance.toFixed(2)}). ` +
+        `($${toNumber(frontendSubtotal)}) no coincide con los precios ` +
+        `actuales del sistema ($${toNumber(backendBaseSubtotal)}). ` +
+        `Diferencia: $${toNumber(priceIntegrityDiff)} (tolerancia: $${toNumber(priceIntegrityTolerance)}). ` +
         `Por favor, recargá el carrito e intentá de nuevo.`
       );
     }
@@ -220,8 +222,9 @@ const create = async (saleData, user) => {
     });
     const { legacyRules, universalRules } = discountService.splitRulesByEngine(allRules);
 
-    // Calcular originalTotal una sola vez desde precios de DB
-    const originalTotal = cartItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+    // Calcular originalTotal una sola vez desde precios de DB (Decimal, sin
+    // arrastre de punto flotante — usado para las validaciones de ESTE archivo).
+    const originalTotal = sum(cartItems, (i) => money(i.unitPrice).times(i.quantity));
 
     // Motor legacy (retrocompatibilidad)
     const legacyContext = {
@@ -248,9 +251,17 @@ const create = async (saleData, user) => {
       ? runUniversalPipeline(universalContext, universalRules)
       : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
-    // Merge resultados — pasar maxDiscountPct para que el cap aplique a ambos motores
+    // Merge resultados — pasar maxDiscountPct para que el cap aplique a ambos motores.
+    // NOTA (límite de alcance de esta unidad): `discountService.mergeEngineResults` es
+    // código de Fase 7 (discountEngine Decimal), todavía NO migrado — sigue esperando
+    // un `number` nativo y hace su propia aritmética con `* - Math.min/max` sobre
+    // `originalTotal`. Esos operadores son seguros con un Decimal (siempre fuerzan
+    // ToNumber, nunca concatenan string), pero pasar un `number` explícito en este
+    // límite es la conversión de frontera correcta y documentada — mismo principio
+    // que el export a Excel (boundary ring): servicios Decimal de punta a punta,
+    // conversión explícita solo al cruzar a código aún no migrado.
     const discountResult = discountService.mergeEngineResults(
-      legacyResult, universalResult, originalTotal, allRules,
+      legacyResult, universalResult, toNumber(originalTotal), allRules,
       store?.maxDiscountPct ?? 80,
       preferredRuleIds,
       excludedRuleIds
@@ -295,41 +306,37 @@ const create = async (saleData, user) => {
     // ── PASO 5: Recalcular totales finales post-ajuste ───────────
     // AXIOMA: el blindaje de tienda se aplica como última línea de defensa (SC-2.3)
     // Se recalculan montos por si se removió algún LIMITED_STOCK por cupo insuficiente.
-    let discountTotal = discountResult.appliedDiscounts.reduce(
-      (sum, d) => sum + d.amount, 0
-    );
-    const computedSubtotal = cartItems.reduce(
-      (sum, i) => sum + i.unitPrice * i.quantity, 0
-    );
+    let discountTotal = sum(discountResult.appliedDiscounts, (d) => d.amount);
+    const computedSubtotal = sum(cartItems, (i) => money(i.unitPrice).times(i.quantity));
 
     // Re-aplicar el CAP sobre el total recalculado y ajustar desgloses
     const maxDiscountPct = store?.maxDiscountPct ?? 80;
-    const maxAllowedDiscount = parseFloat(((computedSubtotal * maxDiscountPct) / 100).toFixed(2));
+    const maxAllowedDiscount = round(computedSubtotal.times(maxDiscountPct).dividedBy(100));
 
     // LOG de auditoría (Debug en Transacción)
-    console.log(`[SALE CAP DEBUG] Store: ${effectiveStoreId} | MaxPct: ${maxDiscountPct} | Subtotal: ${computedSubtotal} | CurrentDisc: ${discountTotal} | MaxAllowed: ${maxAllowedDiscount}`);
+    console.log(`[SALE CAP DEBUG] Store: ${effectiveStoreId} | MaxPct: ${maxDiscountPct} | Subtotal: ${toNumber(computedSubtotal)} | CurrentDisc: ${toNumber(discountTotal)} | MaxAllowed: ${toNumber(maxAllowedDiscount)}`);
 
-    if (discountTotal > maxAllowedDiscount) {
-      const ratio = maxAllowedDiscount / discountTotal;
-      let adjustedSum = 0;
+    if (discountTotal.gt(maxAllowedDiscount)) {
+      const ratio = maxAllowedDiscount.dividedBy(discountTotal);
+      let adjustedSum = money(0);
 
       discountResult.appliedDiscounts = discountResult.appliedDiscounts.map((d, index) => {
         // Ajuste por diferencia de redondeo en el último elemento
         if (index === discountResult.appliedDiscounts.length - 1) {
-          const lastAmount = parseFloat((maxAllowedDiscount - adjustedSum).toFixed(2));
-          return { ...d, amount: Math.max(lastAmount, 0) };
+          const lastAmount = round(maxAllowedDiscount.minus(adjustedSum));
+          return { ...d, amount: D.max(lastAmount, money(0)) };
         }
-        const newAmount = parseFloat((d.amount * ratio).toFixed(2));
-        adjustedSum += newAmount;
+        const newAmount = round(money(d.amount).times(ratio));
+        adjustedSum = adjustedSum.plus(newAmount);
         return { ...d, amount: newAmount };
-      }).filter(d => d.amount > 0);
+      }).filter((d) => money(d.amount).gt(0));
 
       discountTotal = maxAllowedDiscount;
     }
 
-    const computedFinalTotal = Math.max(
-      parseFloat((computedSubtotal - discountTotal).toFixed(2)),
-      0.01
+    const computedFinalTotal = D.max(
+      round(computedSubtotal.minus(discountTotal)),
+      money(0.01)
     );
 
     // SEGURIDAD: Validamos que lo cobrado coincida con lo que el motor calculó
@@ -337,8 +344,8 @@ const create = async (saleData, user) => {
     // incluye el monto CC (que se registra como deuda), por lo que la suma sigue
     // siendo igual al total. Solo se omite la validación si hay CC puro (paidAmount=0).
     const ccBreakdown = paymentBreakdown.find(p => p.method === 'CUENTA_CORRIENTE');
-    const ccAmount = ccBreakdown ? ccBreakdown.amount : 0;
-    const cashPaid = parseFloat((computedFinalTotal - ccAmount).toFixed(2));
+    const ccAmount = round(money(ccBreakdown ? ccBreakdown.amount : 0));
+    const cashPaid = round(computedFinalTotal.minus(ccAmount));
 
     if (!hasCCPayment) {
       // Venta normal: suma total debe coincidir exactamente
@@ -346,14 +353,14 @@ const create = async (saleData, user) => {
     } else {
       // CC: solo validamos que los métodos no-CC (dinero real) sean SUFICIENTES para cubrir lo esperado. (SC-3.4)
       const nonCCPayments = paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE');
-      const nonCCTotal = nonCCPayments.reduce((s, p) => s + p.amount, 0);
+      const nonCCTotal = sum(nonCCPayments, (p) => p.amount);
 
-      const tolerance = Math.max(0.01, cashPaid * 0.001);
+      const tolerance = D.max(money(0.01), money(cashPaid).times(0.001));
 
-      if (nonCCTotal < cashPaid - tolerance) {
+      if (nonCCTotal.lt(money(cashPaid).minus(tolerance))) {
         throw new Error(
-          `Los pagos en efectivo/tarjeta ($${nonCCTotal.toFixed(2)}) son insuficientes. ` +
-          `Se esperaba al menos $${cashPaid.toFixed(2)} (Total $${computedFinalTotal.toFixed(2)} - CC $${ccAmount.toFixed(2)}).`
+          `Los pagos en efectivo/tarjeta ($${toNumber(nonCCTotal)}) son insuficientes. ` +
+          `Se esperaba al menos $${toNumber(cashPaid)} (Total $${toNumber(computedFinalTotal)} - CC $${toNumber(ccAmount)}).`
         );
       }
     }
@@ -362,8 +369,8 @@ const create = async (saleData, user) => {
       ? (paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE').length > 0 ? 'COMBINADO' : 'CUENTA_CORRIENTE')
       : (paymentBreakdown.length > 1 ? 'COMBINADO' : paymentBreakdown[0].method);
 
-    const orderStatusPayment = hasCCPayment && ccAmount > 0
-      ? (cashPaid === 0 ? 'pending' : 'partial')
+    const orderStatusPayment = hasCCPayment && ccAmount.gt(0)
+      ? (cashPaid.isZero() ? 'pending' : 'partial')
       : 'paid';
 
     // ── PASO 7: Crear la orden con totales del motor ──────────────
@@ -374,9 +381,9 @@ const create = async (saleData, user) => {
         cashRegisterId: currentRegister.id,
         clientId: clientId || null,
         amount: computedFinalTotal,       // Motor, no frontend
-        amoutPayed: parseFloat(cashPaid.toFixed(2)),
-        amoutToPaid: parseFloat(ccAmount.toFixed(2)),
-        discountTotal: parseFloat(discountTotal.toFixed(2)),
+        amoutPayed: cashPaid,
+        amoutToPaid: ccAmount,
+        discountTotal: round(discountTotal),
         paymentMethod: paymentMethodSummary,
         status: 'completed',
         statusPayment: orderStatusPayment,
@@ -409,7 +416,7 @@ const create = async (saleData, user) => {
 
     // ── PASO 8b: Registrar deuda en Cuenta Corriente (si aplica) ─
     let ccMovement = null;
-    if (hasCCPayment && ccAmount > 0) {
+    if (hasCCPayment && ccAmount.gt(0)) {
       const ccResult = await currentAccountServices.addSaleDebt(tx, {
         orderId: order.id,
         clientId,
@@ -426,7 +433,7 @@ const create = async (saleData, user) => {
     // los campos que necesita AppliedDiscount (type, layer, percentage, reason)
     // usando la DiscountRule como source of truth.
     async function normalizeAppliedDiscount(orderId, applied) {
-      if (applied.amount <= 0) return null;
+      if (money(applied.amount).lte(0)) return null;
 
       // Buscar la regla para obtener metadata
       const rule = await tx.discountRule.findUnique({
@@ -470,7 +477,10 @@ const create = async (saleData, user) => {
         type,
         layer,
         percentage,
-        amount: applied.amount,
+        // HALF_UP a 2 decimales en la capa de ítem — AppliedDiscount.amount era
+        // Float sin redondear antes de este cambio (addendum Q2 de proposal.md);
+        // ahora se redondea igual que el resto de los montos de la venta.
+        amount: round(applied.amount),
         productId: applied.productId ?? null,
         discountedQuantity: applied.discountedQty ?? applied.quantity ?? null,
         reason,
@@ -489,12 +499,37 @@ const create = async (saleData, user) => {
     }
 
     // ── PASO 10: Descontar stock y registrar historial ────────────
+    // Atomicidad: el chequeo "hay stock suficiente" y el decremento son UN
+    // SOLO statement atómico a nivel DB (`updateMany` con `WHERE stock: { gte:
+    // quantity } }`), nunca un read-then-write. El pre-check de ~171
+    // (`product.stock < item.quantity`) se mantiene SOLO como atajo para un
+    // error rápido y amable en el caso NO concurrente — este guard atómico,
+    // dentro de la misma $transaction que el resto de la venta, es la única
+    // fuente de verdad real contra dos ventas concurrentes por la última
+    // unidad. `count === 0` revierte TODA la venta (el throw está dentro del
+    // callback de $transaction).
     for (const item of cartItems) {
-      const previousStock = productMap.get(item.productId).stock;
-
-      const updated = await tx.product.update({
-        where: { id: item.productId },
+      const { count } = await tx.product.updateMany({
+        where: { id: item.productId, storeId: effectiveStoreId, stock: { gte: item.quantity } },
         data: { stock: { decrement: item.quantity } },
+      });
+
+      if (count === 0) {
+        throw Object.assign(
+          new Error(
+            `Stock insuficiente para "${productMap.get(item.productId)?.name ?? item.productId}": ` +
+            'otra venta lo consumió primero. Recargá el carrito e intentá de nuevo.'
+          ),
+          { status: 409 }
+        );
+      }
+
+      // `updateMany` solo devuelve { count } — re-leer SIEMPRE el estado
+      // post-escritura; previousStock/currentStock se derivan de este valor,
+      // nunca del `productMap` pre-lectura (mismo patrón que registerPayment/close).
+      const post = await tx.product.findUnique({
+        where: { id: item.productId },
+        select: { stock: true },
       });
 
       await tx.stockHistory.create({
@@ -503,22 +538,25 @@ const create = async (saleData, user) => {
           productId: item.productId,
           userId: user.id || null,
           type: 'SALE',
-          previousStock,
+          previousStock: post.stock + item.quantity,
           movementAmount: -item.quantity,
-          currentStock: updated.stock,
+          currentStock: post.stock,
           description: `Venta POS #${order.id.slice(-6)}${user.isSimulating ? ' (Simulada por SISTEMA)' : ''}`,
         },
       });
     }
 
     // ── Respuesta ─────────────────────────────────────────────────
-
+    // Devuelve Decimal end-to-end — el serializer global de res.json
+    // (middlewares/decimalSerializer.js, Unit 2) convierte a Number en la
+    // respuesta HTTP real. Los tests que llaman a create() directamente
+    // deben usar `toNumber()` sobre estos campos.
     return {
       ...order,
       orderPayments: paymentBreakdown,
       discountSummary: {
-        originalTotal: parseFloat(computedSubtotal.toFixed(2)),
-        discountTotal: parseFloat(discountTotal.toFixed(2)),
+        originalTotal: round(computedSubtotal),
+        discountTotal: round(discountTotal),
         finalTotal: computedFinalTotal,
         applied: discountResult.appliedDiscounts,
         conditional: discountResult.conditionalDiscounts,
@@ -580,12 +618,14 @@ const getById = async (id, user) => {
   if (!order) throw new Error(`Venta con ID ${id} no encontrada`);
 
   // Agregar discountSummary para consistencia con create
-  // Calcular totals desde los descuentos aplicados
-  const discountTotal = (order.appliedDiscounts || []).reduce((sum, d) => sum + d.amount, 0);
-  const orderDetailsTotal = (order.orderDetails || []).reduce(
-    (sum, d) => sum + d.price * d.quantity, 0
-  );
-  const finalTotal = order.amount;
+  // Calcular totals desde los descuentos aplicados.
+  // `d.amount`/`order.amount`/`d.price` llegan de DB como Prisma.Decimal
+  // (schema Decimal(12,2) desde Unit 1) — `sum`/`money` evitan el bug de
+  // concatenación de string que produce el operador nativo `+` sobre un
+  // Decimal crudo (ver utils/money.js).
+  const discountTotal = sum(order.appliedDiscounts || [], (d) => d.amount);
+  const orderDetailsTotal = sum(order.orderDetails || [], (d) => money(d.price).times(d.quantity));
+  const finalTotal = money(order.amount);
 
   // Enriquecer appliedDiscounts para que incluyan name y percentage desde la regla
   const enrichedDiscounts = (order.appliedDiscounts || []).map(d => {
@@ -604,9 +644,9 @@ const getById = async (id, user) => {
   return {
     ...order,
     discountSummary: {
-      originalTotal: parseFloat((orderDetailsTotal + discountTotal).toFixed(2)),
-      discountTotal: parseFloat(discountTotal.toFixed(2)),
-      finalTotal: parseFloat(finalTotal.toFixed(2)),
+      originalTotal: round(orderDetailsTotal.plus(discountTotal)),
+      discountTotal: round(discountTotal),
+      finalTotal: round(finalTotal),
       applied: enrichedDiscounts,
       conditional: [],
       warnings: [],
@@ -683,14 +723,22 @@ const cancel = async (orderId, password, user) => {
       },
     });
 
-    // 3.2 Revertir stock y registrar historial por cada ítem
+    // 3.2 Revertir stock y registrar historial por cada ítem.
+    // `increment` es una operación atómica relativa por naturaleza (no es
+    // uno de los 4 sitios TOCTOU del design — mismo razonamiento que
+    // `addSaleDebt`), no necesita un guard `updateMany`+count. Pero
+    // `previousStock` SIEMPRE se deriva del estado POST-escritura, nunca de
+    // `detail.product.stock` (leído en el `findFirst` del paso 2, ANTES de
+    // esta transacción) — ese valor puede estar obsoleto si cualquier otra
+    // operación tocó el stock entre ambos puntos. Mismo patrón que PASO 10
+    // de `create`.
     for (const detail of order.orderDetails) {
-      const previousStock = detail.product.stock;
-
       const updatedProduct = await tx.product.update({
         where: { id: detail.productId },
         data: { stock: { increment: detail.quantity } },
       });
+
+      const previousStock = updatedProduct.stock - detail.quantity;
 
       await tx.stockHistory.create({
         data: {
@@ -702,6 +750,39 @@ const cancel = async (orderId, password, user) => {
           movementAmount: detail.quantity,   // Positivo: se devuelve al stock
           currentStock: updatedProduct.stock,
           description: `Devolución por anulación de venta #${orderId.slice(-6).toUpperCase()}`,
+        },
+      });
+    }
+
+    // 3.3 Reversión de deuda en Cuenta Corriente, si la venta tuvo CC.
+    // `orderId` es @unique en CurrentAccountMovement — nunca hay más de un
+    // movimiento por venta. Si existe y generó deuda real (debtAmount > 0),
+    // se revierte con un movimiento NUEVO de tipo ADJUSTMENT: nunca se
+    // reutiliza ni se borra el movimiento original (es el registro de
+    // auditoría de la venta) y nunca se conecta `orderId` en el nuevo
+    // movimiento (ese campo es @unique y ya está tomado por el original).
+    // Una venta pagada 100% en efectivo nunca tuvo este movimiento — el
+    // `findUnique` devuelve null y este bloque no toca CurrentAccount.
+    const originalMovement = await tx.currentAccountMovement.findUnique({
+      where: { orderId },
+    });
+
+    if (originalMovement && money(originalMovement.debtAmount).gt(0)) {
+      const updatedAccount = await tx.currentAccount.update({
+        where: { id: originalMovement.currentAccountId },
+        data: { balance: { decrement: originalMovement.debtAmount } },
+      });
+
+      await tx.currentAccountMovement.create({
+        data: {
+          currentAccount: { connect: { id: originalMovement.currentAccountId } },
+          user:           { connect: { id: user.id } },
+          type:           'ADJUSTMENT',
+          totalAmount:    money(0),
+          paidAmount:     money(0),
+          debtAmount:     money(originalMovement.debtAmount).negated(),
+          balanceAfter:   updatedAccount.balance,
+          description:    `Anulación de venta #${orderId.slice(-6).toUpperCase()}`,
         },
       });
     }
