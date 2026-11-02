@@ -19,6 +19,9 @@ const tests = [
   './money/money.test.js',
   './money/serializer.test.js',
   './integrity/stock-check.test.js',
+  './concurrency/payment-race.test.js',
+  './concurrency/close-race.test.js',
+  './scenarios/cc-exact-payment.test.js',
 ];
 
 async function main() {
