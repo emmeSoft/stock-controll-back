@@ -17,6 +17,7 @@
 
 const tests = [
   './money/money.test.js',
+  './money/serializer.test.js',
   './integrity/stock-check.test.js',
 ];
 
