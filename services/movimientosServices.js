@@ -1,5 +1,6 @@
 const prisma = require('../db/database.prisma');
 const cajaServices = require('./cajaServices');
+const { round, isPositiveAmount } = require('../utils/money');
 
 const createMovement = async (data, user) => {
     // Regla: los movimientos se asocian a la caja ABIERTA de la tienda
@@ -15,15 +16,19 @@ const createMovement = async (data, user) => {
         throw new Error('El tipo de movimiento debe ser INCOME o EXPENSE');
     }
 
+    if (!isPositiveAmount(amount)) {
+        throw Object.assign(new Error('El monto del movimiento debe ser un número positivo y finito.'), { status: 400 });
+    }
+
     const movement = await prisma.cashMovement.create({
         data: {
             store: { connect: { id: user.storeId } },
             cashRegister: { connect: { id: currentRegister.id } },
             user: { connect: { id: user.id } },
             type: type,
-            amount: parseFloat(amount),
-            description: user.isSimulating 
-                ? `${description || ''} (Simulada por SISTEMA)`.trim() 
+            amount: round(amount),
+            description: user.isSimulating
+                ? `${description || ''} (Simulada por SISTEMA)`.trim()
                 : (description || null),
             reference: reference || null
         }

@@ -1,4 +1,10 @@
 -- CreateEnum
+CREATE TYPE "CurrentAccountStatus" AS ENUM ('OPEN', 'CLOSED');
+
+-- CreateEnum
+CREATE TYPE "CurrentAccountMovementType" AS ENUM ('SALE', 'PAYMENT', 'ADJUSTMENT');
+
+-- CreateEnum
 CREATE TYPE "CashRegisterStatus" AS ENUM ('OPEN', 'CLOSED');
 
 -- CreateEnum
@@ -10,15 +16,23 @@ CREATE TYPE "StockMovementType" AS ENUM ('SALE', 'MANUAL_ADJUSTMENT', 'PURCHASE'
 -- CreateEnum
 CREATE TYPE "RoleType" AS ENUM ('SISTEMA', 'ADMINISTRADOR', 'ENCARGADO', 'VENDEDOR');
 
+-- CreateEnum
+CREATE TYPE "DiscountType" AS ENUM ('QUANTITY', 'CASH_PAYMENT', 'CLIENT', 'SPECIAL_DATE', 'PRODUCT', 'CATEGORY', 'MIN_AMOUNT', 'LIMITED_STOCK');
+
+-- CreateEnum
+CREATE TYPE "DiscountLayer" AS ENUM ('ITEM', 'ORDER');
+
 -- CreateTable
 CREATE TABLE "store" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "address" TEXT,
     "phone" TEXT,
+    "profilePicture" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "maxDiscountPct" DOUBLE PRECISION NOT NULL DEFAULT 80,
 
     CONSTRAINT "store_pkey" PRIMARY KEY ("id")
 );
@@ -95,9 +109,10 @@ CREATE TABLE "order" (
     "cashRegisterId" TEXT,
     "clientId" TEXT,
     "orderDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "amount" DOUBLE PRECISION NOT NULL,
-    "amoutPayed" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "amoutToPaid" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "amount" DECIMAL(12,2) NOT NULL,
+    "amoutPayed" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "amoutToPaid" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "discountTotal" DECIMAL(12,2) DEFAULT 0,
     "paymentMethod" TEXT,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "statusPayment" TEXT DEFAULT 'pending',
@@ -128,7 +143,7 @@ CREATE TABLE "product" (
     "storeId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT,
-    "price" DOUBLE PRECISION NOT NULL,
+    "price" DECIMAL(12,2) NOT NULL,
     "stock" INTEGER NOT NULL DEFAULT 0,
     "profilePicture" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -146,27 +161,11 @@ CREATE TABLE "orderDetail" (
     "orderId" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
     "quantity" INTEGER NOT NULL DEFAULT 1,
-    "price" DOUBLE PRECISION NOT NULL,
+    "price" DECIMAL(12,2) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "orderDetail_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "payment" (
-    "id" TEXT NOT NULL,
-    "storeId" TEXT NOT NULL,
-    "userId" TEXT,
-    "clientId" TEXT,
-    "amount" DOUBLE PRECISION NOT NULL,
-    "sucursalId" TEXT,
-    "paymentDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "paymentMethod" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "payment_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -199,6 +198,7 @@ CREATE TABLE "Image" (
     "supplierId" TEXT,
     "categoryId" TEXT,
     "productId" TEXT,
+    "storeId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -211,10 +211,10 @@ CREATE TABLE "CashRegister" (
     "storeId" TEXT NOT NULL,
     "openedByUserId" TEXT NOT NULL,
     "closedByUserId" TEXT,
-    "openingAmount" DOUBLE PRECISION NOT NULL,
-    "closingAmount" DOUBLE PRECISION,
-    "expectedAmount" DOUBLE PRECISION,
-    "difference" DOUBLE PRECISION,
+    "openingAmount" DECIMAL(12,2) NOT NULL,
+    "closingAmount" DECIMAL(12,2),
+    "expectedAmount" DECIMAL(12,2),
+    "difference" DECIMAL(12,2),
     "observation" TEXT,
     "status" "CashRegisterStatus" NOT NULL DEFAULT 'OPEN',
     "openedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -232,7 +232,7 @@ CREATE TABLE "CashMovement" (
     "cashRegisterId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "type" "MovementType" NOT NULL,
-    "amount" DOUBLE PRECISION NOT NULL,
+    "amount" DECIMAL(12,2) NOT NULL,
     "description" TEXT,
     "reference" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -262,10 +262,42 @@ CREATE TABLE "OrderPayment" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "paymentMethod" TEXT NOT NULL,
-    "amount" DOUBLE PRECISION NOT NULL,
+    "amount" DECIMAL(12,2) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "OrderPayment_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CurrentAccount" (
+    "id" TEXT NOT NULL,
+    "clientId" TEXT NOT NULL,
+    "storeId" TEXT NOT NULL,
+    "balance" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "status" "CurrentAccountStatus" NOT NULL DEFAULT 'OPEN',
+    "openedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "closedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "CurrentAccount_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CurrentAccountMovement" (
+    "id" TEXT NOT NULL,
+    "currentAccountId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "type" "CurrentAccountMovementType" NOT NULL,
+    "totalAmount" DECIMAL(12,2) NOT NULL,
+    "paidAmount" DECIMAL(12,2) NOT NULL,
+    "debtAmount" DECIMAL(12,2) NOT NULL,
+    "balanceAfter" DECIMAL(12,2) NOT NULL,
+    "orderId" TEXT,
+    "description" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CurrentAccountMovement_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -314,6 +346,51 @@ CREATE TABLE "RoleAudit" (
     CONSTRAINT "RoleAudit_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "DiscountRule" (
+    "id" TEXT NOT NULL,
+    "storeId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "percentage" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "startsAt" TIMESTAMP(3),
+    "endsAt" TIMESTAMP(3),
+    "type" "DiscountType",
+    "conditions" JSONB,
+    "engineVersion" TEXT NOT NULL DEFAULT 'legacy',
+    "conditionsUniversal" JSONB,
+    "priority" INTEGER NOT NULL DEFAULT 0,
+    "layer" "DiscountLayer",
+    "isCombinable" BOOLEAN NOT NULL DEFAULT true,
+    "allowPartial" BOOLEAN NOT NULL DEFAULT false,
+    "combinesWith" "DiscountType"[],
+    "maxPercentage" DOUBLE PRECISION,
+    "usedUnits" INTEGER NOT NULL DEFAULT 0,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdBy" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DiscountRule_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AppliedDiscount" (
+    "id" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "discountRuleId" TEXT NOT NULL,
+    "type" "DiscountType",
+    "layer" "DiscountLayer" NOT NULL,
+    "percentage" DOUBLE PRECISION NOT NULL,
+    "amount" DECIMAL(12,2) NOT NULL,
+    "productId" TEXT,
+    "discountedQuantity" INTEGER,
+    "reason" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AppliedDiscount_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "user_email_key" ON "user"("email");
 
@@ -330,6 +407,24 @@ CREATE UNIQUE INDEX "categories_storeId_barcodePrefix_key" ON "categories"("stor
 CREATE UNIQUE INDEX "product_storeId_barcode_key" ON "product"("storeId", "barcode");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "CurrentAccount_clientId_key" ON "CurrentAccount"("clientId");
+
+-- CreateIndex
+CREATE INDEX "CurrentAccount_storeId_status_idx" ON "CurrentAccount"("storeId", "status");
+
+-- CreateIndex
+CREATE INDEX "CurrentAccount_clientId_idx" ON "CurrentAccount"("clientId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CurrentAccountMovement_orderId_key" ON "CurrentAccountMovement"("orderId");
+
+-- CreateIndex
+CREATE INDEX "CurrentAccountMovement_currentAccountId_idx" ON "CurrentAccountMovement"("currentAccountId");
+
+-- CreateIndex
+CREATE INDEX "CurrentAccountMovement_userId_idx" ON "CurrentAccountMovement"("userId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Role_name_key" ON "Role"("name");
 
 -- CreateIndex
@@ -343,6 +438,18 @@ CREATE INDEX "RoleAudit_userId_idx" ON "RoleAudit"("userId");
 
 -- CreateIndex
 CREATE INDEX "RoleAudit_changedBy_idx" ON "RoleAudit"("changedBy");
+
+-- CreateIndex
+CREATE INDEX "DiscountRule_storeId_isActive_idx" ON "DiscountRule"("storeId", "isActive");
+
+-- CreateIndex
+CREATE INDEX "DiscountRule_type_idx" ON "DiscountRule"("type");
+
+-- CreateIndex
+CREATE INDEX "AppliedDiscount_orderId_idx" ON "AppliedDiscount"("orderId");
+
+-- CreateIndex
+CREATE INDEX "AppliedDiscount_discountRuleId_idx" ON "AppliedDiscount"("discountRuleId");
 
 -- AddForeignKey
 ALTER TABLE "user" ADD CONSTRAINT "user_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "Role"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -384,15 +491,6 @@ ALTER TABLE "orderDetail" ADD CONSTRAINT "orderDetail_orderId_fkey" FOREIGN KEY 
 ALTER TABLE "orderDetail" ADD CONSTRAINT "orderDetail_productId_fkey" FOREIGN KEY ("productId") REFERENCES "product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "payment" ADD CONSTRAINT "payment_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "client"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payment" ADD CONSTRAINT "payment_storeId_fkey" FOREIGN KEY ("storeId") REFERENCES "store"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "payment" ADD CONSTRAINT "payment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Image" ADD CONSTRAINT "Image_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -406,6 +504,9 @@ ALTER TABLE "Image" ADD CONSTRAINT "Image_supplierId_fkey" FOREIGN KEY ("supplie
 
 -- AddForeignKey
 ALTER TABLE "Image" ADD CONSTRAINT "Image_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Image" ADD CONSTRAINT "Image_storeId_fkey" FOREIGN KEY ("storeId") REFERENCES "store"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "CashRegister" ADD CONSTRAINT "CashRegister_closedByUserId_fkey" FOREIGN KEY ("closedByUserId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -438,7 +539,34 @@ ALTER TABLE "StockHistory" ADD CONSTRAINT "StockHistory_userId_fkey" FOREIGN KEY
 ALTER TABLE "OrderPayment" ADD CONSTRAINT "OrderPayment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "CurrentAccount" ADD CONSTRAINT "CurrentAccount_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "client"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CurrentAccount" ADD CONSTRAINT "CurrentAccount_storeId_fkey" FOREIGN KEY ("storeId") REFERENCES "store"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CurrentAccountMovement" ADD CONSTRAINT "CurrentAccountMovement_currentAccountId_fkey" FOREIGN KEY ("currentAccountId") REFERENCES "CurrentAccount"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CurrentAccountMovement" ADD CONSTRAINT "CurrentAccountMovement_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CurrentAccountMovement" ADD CONSTRAINT "CurrentAccountMovement_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "PermissionRole" ADD CONSTRAINT "PermissionRole_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "Role"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PermissionRole" ADD CONSTRAINT "PermissionRole_permissionId_fkey" FOREIGN KEY ("permissionId") REFERENCES "Permission"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DiscountRule" ADD CONSTRAINT "DiscountRule_storeId_fkey" FOREIGN KEY ("storeId") REFERENCES "store"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DiscountRule" ADD CONSTRAINT "DiscountRule_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AppliedDiscount" ADD CONSTRAINT "AppliedDiscount_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AppliedDiscount" ADD CONSTRAINT "AppliedDiscount_discountRuleId_fkey" FOREIGN KEY ("discountRuleId") REFERENCES "DiscountRule"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

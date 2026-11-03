@@ -1,5 +1,6 @@
 const productsServices = require('../services/productsServices');
 const excelService = require('../services/excelService');
+const { toNumber } = require('../utils/money');
 
 const createProduct = async (req, res) => {
   const dataProduct = req.body;
@@ -102,7 +103,11 @@ const adjustStock = async (req, res) => {
     const result = await productsServices.adjustStock(id, amount, description, req.user);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    // money-stock-integrity: same house convention as salesController —
+    // without `error.status`, the atomic guard's 409 would be silently
+    // downgraded to a generic 400 and the client could never tell "someone
+    // else changed the stock first" apart from "bad request".
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
@@ -124,7 +129,9 @@ const exportProducts = async (req, res) => {
       name: p.name,
       category: p.category ? p.category.name : 'Sin Categoría',
       stock: p.stock,
-      price: p.price,
+      // money-stock-integrity: p.price is still Decimal — Excel export
+      // bypasses the res.json serializer, so unwrap it explicitly.
+      price: toNumber(p.price),
       status: p.isActive ? 'Activo' : 'Inactivo'
     }));
 

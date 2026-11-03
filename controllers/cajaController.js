@@ -1,12 +1,13 @@
 const cajaServices = require('../services/cajaServices');
 const excelService = require('../services/excelService');
+const { toNumber } = require('../utils/money');
 
 const openRegister = async (req, res) => {
   try {
     const result = await cajaServices.openRegister(req.body, req.user);
     res.status(201).json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
@@ -15,7 +16,7 @@ const closeRegister = async (req, res) => {
     const result = await cajaServices.closeRegister(req.body, req.user);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
@@ -82,22 +83,28 @@ const exportRegisters = async (req, res) => {
 
     const data = registers.map(reg => {
       const t = reg.totals;
-      const fisicoExpected = reg.openingAmount + t.ventasEfectivo + t.ingresosManuales - t.retirosManuales;
+      // money-stock-integrity: reg.openingAmount / t.* are still Decimal
+      // (cajaServices.getAllRegisters keeps them Decimal end-to-end, per
+      // design). Excel export bypasses the res.json serializer, so every
+      // money value must be unwrapped with toNumber() before arithmetic or
+      // being written into a cell — native `+`/`-` on Decimal string-concat
+      // or silently misbehave otherwise.
+      const fisicoExpected = toNumber(reg.openingAmount) + toNumber(t.ventasEfectivo) + toNumber(t.ingresosManuales) - toNumber(t.retirosManuales);
       return {
         openedAt:      reg.openedAt,
         closedAt:      reg.closedAt || 'Abierta',
         status:        reg.status === 'CLOSED' ? 'Cerrada' : 'Activa',
         openedBy:      reg.openedByUser ? `${reg.openedByUser.firstName} ${reg.openedByUser.lastName}` : '—',
         closedBy:      reg.closedByUser ? `${reg.closedByUser.firstName} ${reg.closedByUser.lastName}` : '—',
-        opening:       reg.openingAmount,
-        efectivo:      t.ventasEfectivo,
-        transferencia: t.ventasTransferencia,
-        tarjeta:       t.ventasTarjeta,
-        ingresos:      t.ingresosManuales,
-        retiros:       t.retirosManuales,
+        opening:       toNumber(reg.openingAmount),
+        efectivo:      toNumber(t.ventasEfectivo),
+        transferencia: toNumber(t.ventasTransferencia),
+        tarjeta:       toNumber(t.ventasTarjeta),
+        ingresos:      toNumber(t.ingresosManuales),
+        retiros:       toNumber(t.retirosManuales),
         expected:      fisicoExpected,
-        closing:       reg.closingAmount ?? '—',
-        difference:    reg.difference ?? '—',
+        closing:       reg.closingAmount != null ? toNumber(reg.closingAmount) : '—',
+        difference:    reg.difference != null ? toNumber(reg.difference) : '—',
         observation:   reg.observation || '',
       };
     });

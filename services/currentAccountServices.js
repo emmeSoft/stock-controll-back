@@ -13,6 +13,7 @@
 
 const prisma        = require('../db/database.prisma');
 const cajaServices  = require('./cajaServices');
+const { money, toNumber, isPositiveAmount } = require('../utils/money');
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers
@@ -98,6 +99,14 @@ const open = async (clientId, user) => {
 /**
  * Cierra una cuenta corriente. Solo si balance === 0.
  * Solo puede hacerlo ADMINISTRADOR o SISTEMA.
+ *
+ * Atomicidad: el chequeo de saldo y la escritura son UN SOLO statement
+ * atómico a nivel DB (`updateMany` con `WHERE balance: 0`), nunca un
+ * read-then-if. El viejo pre-check `if (account.balance !== 0)` (y
+ * cualquier "snap a 0" de residuo) se elimina — es moot bajo Decimal:
+ * agregarlo de vuelta de forma Decimal-safe no evita el viaje a la DB
+ * que el guard atómico ya necesita, y el guard es la única fuente de
+ * verdad contra una condición de carrera (ver design.md, addendum Q1).
  */
 const close = async (accountId, user) => {
   const where = { id: accountId };
@@ -107,23 +116,27 @@ const close = async (accountId, user) => {
     throw Object.assign(new Error('Debe seleccionar una tienda para realizar esta acción.'), { status: 400 });
   }
 
-  const account = await prisma.currentAccount.findFirst({
-    where,
-    include: { client: { select: { firstName: true, lastName: true } } },
+  const accountPre = await prisma.currentAccount.findFirst({ where });
+
+  if (!accountPre) throw Object.assign(new Error('Cuenta corriente no encontrada.'), { status: 404 });
+  if (accountPre.status === 'CLOSED') throw Object.assign(new Error('La cuenta ya está cerrada.'), { status: 400 });
+
+  const { count } = await prisma.currentAccount.updateMany({
+    where: { id: accountId, status: 'OPEN', balance: 0 },
+    data:  { status: 'CLOSED', closedAt: new Date() },
   });
 
-  if (!account) throw Object.assign(new Error('Cuenta corriente no encontrada.'), { status: 404 });
-  if (account.status === 'CLOSED') throw Object.assign(new Error('La cuenta ya está cerrada.'), { status: 400 });
-  if (account.balance !== 0) {
+  if (count === 0) {
     throw Object.assign(
-      new Error(`No se puede cerrar la cuenta. El cliente tiene un saldo pendiente de $${account.balance.toFixed(2)}.`),
-      { status: 400 }
+      new Error('No se puede cerrar la cuenta: el saldo cambió, recargá e intentá de nuevo.'),
+      { status: 409 }
     );
   }
 
-  const closed = await prisma.currentAccount.update({
+  // `updateMany` solo devuelve { count } — re-leer SIEMPRE el estado
+  // post-escritura, nunca derivar nada del `accountPre` pre-lectura.
+  const closed = await prisma.currentAccount.findUnique({
     where: { id: accountId },
-    data:  { status: 'CLOSED', closedAt: new Date() },
     include: { client: { select: { firstName: true, lastName: true } } },
   });
 
@@ -242,9 +255,16 @@ const getDetail = async (accountId, user) => {
  * @param {object} data — { clientId, amount, paymentMethod, description? }
  * @param {object} user — usuario autenticado (req.user)
  *
- * Atomicidad: todo ocurre dentro de una $transaction.
+ * Atomicidad: el chequeo "el saldo alcanza para este pago" y el
+ * decremento son UN SOLO statement atómico a nivel DB (`updateMany`
+ * con `WHERE balance: { gte: amount }`), nunca un read-then-if. El
+ * pre-check (`money(amount).gt(accountPre.balance)`) se mantiene SOLO
+ * como atajo para dar un error 400 rápido y amable en el caso NO
+ * concurrente — el guard atómico dentro de la tx es la única fuente
+ * de verdad real contra una condición de carrera (dos pagos
+ * concurrentes compitiendo por el mismo saldo).
  * Efectos:
- *   1. Decrementa balance de la CurrentAccount.
+ *   1. Decrementa balance de la CurrentAccount (atómico, con guard).
  *   2. Crea CurrentAccountMovement de tipo PAYMENT.
  *   3. Crea CashMovement de tipo INCOME en la caja activa.
  */
@@ -253,7 +273,7 @@ const registerPayment = async (data, user) => {
   const storeId = user.storeId;
 
   if (!storeId) throw Object.assign(new Error('No tenés tienda asignada.'), { status: 400 });
-  if (!amount || amount <= 0) throw Object.assign(new Error('El monto del pago debe ser mayor a cero.'), { status: 400 });
+  if (!isPositiveAmount(amount)) throw Object.assign(new Error('El monto del pago debe ser mayor a cero.'), { status: 400 });
   if (!paymentMethod) throw Object.assign(new Error('Debe seleccionar un método de pago.'), { status: 400 });
 
   // Verificar caja abierta ANTES de la tx (falla rápido)
@@ -262,12 +282,12 @@ const registerPayment = async (data, user) => {
     throw Object.assign(new Error('No se puede registrar un pago: Debe abrir una caja primero.'), { status: 400 });
   }
 
-  // Obtener la cuenta antes de la tx para validar
+  // Obtener la cuenta antes de la tx para validar (fast-fail amable, no concurrente)
   const accountPre = await requireOpenAccount(clientId, storeId);
 
-  if (amount > accountPre.balance) {
+  if (money(amount).gt(accountPre.balance)) {
     throw Object.assign(
-      new Error(`El monto del pago ($${amount.toFixed(2)}) supera el saldo adeudado ($${accountPre.balance.toFixed(2)}).`),
+      new Error(`El monto del pago ($${toNumber(amount)}) supera el saldo adeudado ($${toNumber(accountPre.balance)}).`),
       { status: 400 }
     );
   }
@@ -275,13 +295,24 @@ const registerPayment = async (data, user) => {
   // ── Transacción atómica ──────────────────────────────────────
   const result = await prisma.$transaction(async (tx) => {
 
-    // 1. Decrementar saldo
-    const updatedAccount = await tx.currentAccount.update({
-      where: { id: accountPre.id },
+    // 1. Decrementar saldo — SOLO si el saldo sigue alcanzando (guard atómico)
+    const { count } = await tx.currentAccount.updateMany({
+      where: { id: accountPre.id, status: 'OPEN', balance: { gte: amount } },
       data:  { balance: { decrement: amount } },
     });
 
-    const balanceAfter = parseFloat(updatedAccount.balance.toFixed(2));
+    if (count === 0) {
+      throw Object.assign(
+        new Error('No se pudo registrar el pago: el saldo cambió, recargá e intentá de nuevo.'),
+        { status: 409 }
+      );
+    }
+
+    // `updateMany` solo devuelve { count } — re-leer SIEMPRE el estado
+    // post-escritura; `balanceAfter` se deriva de este valor, nunca del
+    // `accountPre` pre-lectura.
+    const updatedAccount = await tx.currentAccount.findUnique({ where: { id: accountPre.id } });
+    const balanceAfter = updatedAccount.balance;
 
     // 2. Registrar movimiento en CurrentAccount
     const movement = await tx.currentAccountMovement.create({
@@ -291,7 +322,7 @@ const registerPayment = async (data, user) => {
         type:           'PAYMENT',
         totalAmount:    amount,
         paidAmount:     amount,
-        debtAmount:     -amount,    // negativo: reduce la deuda
+        debtAmount:     money(amount).negated(),    // negativo: reduce la deuda
         balanceAfter,
         description:    description || `Pago via ${paymentMethod}`,
       },
@@ -337,9 +368,9 @@ const registerPayment = async (data, user) => {
  * @param {number}  paidAmount       — Lo que pagó en el momento
  */
 const addSaleDebt = async (tx, { orderId, clientId, storeId, userId, totalAmount, paidAmount }) => {
-  const debtAmount = parseFloat((totalAmount - paidAmount).toFixed(2));
+  const debtAmount = money(totalAmount).minus(paidAmount);
 
-  if (debtAmount < 0) {
+  if (debtAmount.lt(0)) {
     throw new Error('El monto pagado no puede superar el total de la venta en una cuenta corriente.');
   }
 
@@ -355,13 +386,14 @@ const addSaleDebt = async (tx, { orderId, clientId, storeId, userId, totalAmount
     );
   }
 
-  // Incrementar saldo atómicamente
+  // Incrementar saldo atómicamente (increment relativo — no es un sitio TOCTOU)
   const updatedAccount = await tx.currentAccount.update({
     where: { id: account.id },
     data:  { balance: { increment: debtAmount } },
   });
 
-  const balanceAfter = parseFloat(updatedAccount.balance.toFixed(2));
+  // Derivar balanceAfter del estado post-escritura, nunca del pre-read.
+  const balanceAfter = updatedAccount.balance;
 
   // Registrar movimiento de tipo SALE
   const movement = await tx.currentAccountMovement.create({
@@ -374,7 +406,7 @@ const addSaleDebt = async (tx, { orderId, clientId, storeId, userId, totalAmount
       debtAmount,
       balanceAfter,
       order:          { connect: { id: orderId } },
-      description:    `Venta — Pago parcial $${paidAmount.toFixed(2)} — Cargo $${debtAmount.toFixed(2)}`,
+      description:    `Venta — Pago parcial $${toNumber(paidAmount)} — Cargo $${toNumber(debtAmount)}`,
     },
   });
 

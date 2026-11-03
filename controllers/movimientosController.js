@@ -1,13 +1,14 @@
 const movimientosServices = require('../services/movimientosServices');
 const excelService = require('../services/excelService');
 const prisma = require('../db/database.prisma');
+const { toNumber } = require('../utils/money');
 
 const createMovement = async (req, res) => {
   try {
     const result = await movimientosServices.createMovement(req.body, req.user);
     res.status(201).json(result);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
@@ -55,7 +56,9 @@ const exportMovements = async (req, res) => {
     const data = movements.map(m => ({
       date: m.createdAt,
       type: m.type === 'INCOME' ? 'Ingreso' : 'Egreso',
-      amount: m.amount,
+      // money-stock-integrity: m.amount is still Decimal — Excel export
+      // bypasses the res.json serializer, so unwrap it explicitly.
+      amount: toNumber(m.amount),
       desc: m.description,
       ref: m.reference,
       register: m.cashRegisterId.slice(-6).toUpperCase(),
