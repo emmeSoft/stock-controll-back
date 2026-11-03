@@ -40,12 +40,12 @@ Chain strategy: pending
 
 ## Phase 2: Unit B — Shared Guard Helper + Wiring
 
-- [ ] 2.1 `services/cajaServices.js`: add exported `assertRegisterOpen(tx, registerId, message)` — no-op conditional `updateMany({status:'OPEN'})`, `count===0` → `{status:409, code:'CASH_REGISTER_CLOSED'}`.
-- [ ] 2.2 `services/salesServices.js` `create`: call `assertRegisterOpen` after PASO 1's read + friendly pre-check, before PASO 3/4 (first write).
-- [ ] 2.3 `services/movimientosServices.js` `createMovement`: wrap the existing bare `cashMovement.create` in a NEW `$transaction`; guard is statement 1.
-- [ ] 2.4 `services/currentAccountServices.js` `registerPayment`: guard as statement 1 of the existing `$transaction`, before the `currentAccount.updateMany` balance guard.
-- [ ] 2.5 **Deadlock-ordering verification (mandatory, not polish)**: review the diff of 2.2–2.4 statement-by-statement — confirm the guard call is literally the FIRST statement executed inside each transaction (not merely functionally equivalent), per design Decision 2. Confirm no statement that inserts/updates a row referencing `CashRegister` (order, cashMovement, currentAccount) precedes it. Confirm the resulting lock order `CashRegister < DiscountRule < CurrentAccount < Product` holds across all three sites with no cycle.
-- [ ] 2.6 Confirm 2.2's placement does not move earlier than PASO 1 (would regress `tests/concurrency/sale-race.test.js` from 409 to the friendly 400 pre-check).
+- [x] 2.1 `services/cajaServices.js`: add exported `assertRegisterOpen(tx, registerId, message)` — no-op conditional `updateMany({status:'OPEN'})`, `count===0` → `{status:409, code:'CASH_REGISTER_CLOSED'}`.
+- [x] 2.2 `services/salesServices.js` `create`: call `assertRegisterOpen` after PASO 1's read + friendly pre-check, before PASO 3/4 (first write).
+- [x] 2.3 `services/movimientosServices.js` `createMovement`: wrap the existing bare `cashMovement.create` in a NEW `$transaction`; guard is statement 1.
+- [x] 2.4 `services/currentAccountServices.js` `registerPayment`: guard as statement 1 of the existing `$transaction`, before the `currentAccount.updateMany` balance guard.
+- [x] 2.5 **Deadlock-ordering verification (mandatory, not polish)**: review the diff of 2.2–2.4 statement-by-statement — confirm the guard call is literally the FIRST statement executed inside each transaction (not merely functionally equivalent), per design Decision 2. Confirm no statement that inserts/updates a row referencing `CashRegister` (order, cashMovement, currentAccount) precedes it. Confirm the resulting lock order `CashRegister < DiscountRule < CurrentAccount < Product` holds across all three sites with no cycle.
+- [x] 2.6 Confirm 2.2's placement does not move earlier than PASO 1 (would regress `tests/concurrency/sale-race.test.js` from 409 to the friendly 400 pre-check).
 
 ## Phase 3: Unit C — Error `code` Field
 
