@@ -69,7 +69,10 @@ const registerPayment = async (req, res) => {
     );
     res.status(201).json(result);
   } catch (err) {
-    res.status(err.status || 500).json({ message: err.message });
+    // caja-close-integrity: `code` is additive and gated on `err.status`
+    // so Prisma's own `.code` never leaks into the response body.
+    const code = err.status ? err.code : undefined;
+    res.status(err.status || 500).json({ message: err.message, ...(code && { code }) });
   }
 };
 

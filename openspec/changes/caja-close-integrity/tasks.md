@@ -49,10 +49,10 @@ Chain strategy: pending
 
 ## Phase 3: Unit C — Error `code` Field
 
-- [ ] 3.1 `controllers/cajaController.js`: in the catch block, `const code = error.status ? error.code : undefined; res.status(error.status||400).json({message:error.message, ...(code&&{code})});`.
-- [ ] 3.2 `controllers/salesController.js` `createSale`: same pattern.
-- [ ] 3.3 `controllers/movimientosController.js` `createMovement`: same pattern.
-- [ ] 3.4 `controllers/currentAccountController.js` `registerPayment`: same pattern.
+- [x] 3.1 `controllers/cajaController.js`: in the catch block, `const code = error.status ? error.code : undefined; res.status(error.status||400).json({message:error.message, ...(code&&{code})});`.
+- [x] 3.2 `controllers/salesController.js` `createSale`: same pattern.
+- [x] 3.3 `controllers/movimientosController.js` `createMovement`: same pattern.
+- [x] 3.4 `controllers/currentAccountController.js` `registerPayment`: same pattern.
 
 ## Phase 4: Unit D — Backend Test Scripts (4 Concurrency + 1 Integrity)
 
