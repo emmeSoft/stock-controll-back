@@ -7,7 +7,11 @@ const openRegister = async (req, res) => {
     const result = await cajaServices.openRegister(req.body, req.user);
     res.status(201).json(result);
   } catch (error) {
-    res.status(error.status || 400).json({ message: error.message });
+    // caja-close-integrity: `error.status` is the house marker for a
+    // deliberate, thrown-by-us error. Gating `code` on it keeps Prisma's
+    // own `.code` (P2002, P2025, ...) from leaking into the response body.
+    const code = error.status ? error.code : undefined;
+    res.status(error.status || 400).json({ message: error.message, ...(code && { code }) });
   }
 };
 
@@ -16,7 +20,8 @@ const closeRegister = async (req, res) => {
     const result = await cajaServices.closeRegister(req.body, req.user);
     res.json(result);
   } catch (error) {
-    res.status(error.status || 400).json({ message: error.message });
+    const code = error.status ? error.code : undefined;
+    res.status(error.status || 400).json({ message: error.message, ...(code && { code }) });
   }
 };
 

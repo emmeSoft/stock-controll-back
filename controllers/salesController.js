@@ -18,7 +18,10 @@ const createSale = async (req, res) => {
     // { status: 409 } cuando otra venta concurrente se llevó el stock
     // primero — sin este fallback, SIEMPRE se devolvía 400 sin importar el
     // status real del error, y el 409 nunca llegaba al POS.
-    res.status(error.status || 400).json({ message: error.message });
+    // caja-close-integrity: `code` is additive and gated on `error.status`
+    // so Prisma's own `.code` never leaks into the response body.
+    const code = error.status ? error.code : undefined;
+    res.status(error.status || 400).json({ message: error.message, ...(code && { code }) });
   }
 };
 
