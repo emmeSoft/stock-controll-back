@@ -214,6 +214,33 @@ const closeRegister = async (data, user) => {
     });
 };
 
+/**
+ * Re-afirma que `registerId` sigue OPEN, y retiene un lock exclusivo de la
+ * fila por el resto de `tx`. DEBE ser el primer write de la transacción (ver
+ * design.md Decisión 2: ejecutarlo después de un insert de order/cashMovement
+ * fuerza un upgrade FOR KEY SHARE -> FOR NO KEY UPDATE y puede producir un
+ * deadlock entre dos binders concurrentes).
+ *
+ * El write no-op `status: 'OPEN'` es deliberado: Postgres no optimiza un
+ * UPDATE de mismo valor — toma el lock y crea una nueva versión de fila sin
+ * cambiar nada. Un `findFirst` acá no guardaría nada: no toma lock bajo READ
+ * COMMITTED.
+ *
+ * @param {PrismaTransaction} tx         — cliente de transacción de Prisma
+ * @param {string}            registerId — id de la CashRegister a validar
+ * @param {string}            message    — mensaje de error de cara al usuario
+ */
+const assertRegisterOpen = async (tx, registerId, message) => {
+    const { count } = await tx.cashRegister.updateMany({
+        where: { id: registerId, status: 'OPEN' },
+        data: { status: 'OPEN' }
+    });
+
+    if (count === 0) {
+        throw Object.assign(new Error(message), { status: 409, code: 'CASH_REGISTER_CLOSED' });
+    }
+};
+
 const getCurrentRegister = async (user) => {
     if (!user.storeId) return null; // Prevenir crash de Prisma si el usuario no tiene tienda
     
@@ -372,4 +399,4 @@ const getAllRegisters = async (user, query = {}) => {
     return mappedRegisters;
 };
 
-module.exports = { openRegister, closeRegister, getCurrentRegister, getRegisterHistory, getGlobalHistory, getAllRegisters };
+module.exports = { openRegister, closeRegister, assertRegisterOpen, getCurrentRegister, getRegisterHistory, getGlobalHistory, getAllRegisters };
