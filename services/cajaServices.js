@@ -52,7 +52,12 @@ const openRegister = async (data, user) => {
         throw new Error('No tienes una tienda asignada para operar la caja.');
     }
 
-    // Regla: solo puede existir una caja abierta por tienda al mismo tiempo
+    // Regla: solo puede existir una caja abierta por tienda al mismo tiempo.
+    // Chequeo amistoso y NO atómico: evita un viaje redondo innecesario en el
+    // caso no-concurrente, pero NO es la guarda real. La guarda real es el
+    // índice único parcial `CashRegister_one_open_per_store` (ver
+    // prisma/migrations/<ts>_cashregister_one_open_per_store), que convierte
+    // una carrera entre dos terminales en un P2002 capturado abajo.
     const existingOpen = await prisma.cashRegister.findFirst({
         where: { storeId: user.storeId, status: 'OPEN' }
     });
@@ -61,17 +66,35 @@ const openRegister = async (data, user) => {
         throw new Error('Ya existe una caja abierta en esta tienda.');
     }
 
-    const caja = await prisma.cashRegister.create({
-        data: {
-            store: { connect: { id: user.storeId } },
-            openedByUser: { connect: { id: user.id } },
-            openingAmount: round(openingAmount),
-            status: 'OPEN',
-            observation: user.isSimulating ? 'Apertura Simulada por SISTEMA' : null
-        }
-    });
+    // Sin $transaction: un solo INSERT ya es atómico; el índice único parcial
+    // es el árbitro real de "una sola caja OPEN por tienda" bajo concurrencia.
+    try {
+        const caja = await prisma.cashRegister.create({
+            data: {
+                store: { connect: { id: user.storeId } },
+                openedByUser: { connect: { id: user.id } },
+                openingAmount: round(openingAmount),
+                status: 'OPEN',
+                observation: user.isSimulating ? 'Apertura Simulada por SISTEMA' : null
+            }
+        });
 
-    return caja;
+        return caja;
+    } catch (e) {
+        // P2002 = unique violation (PG 23505). El único constraint único que
+        // un INSERT de CashRegister puede violar es este índice parcial (la PK
+        // es un cuid). Se loguea `e.meta.target` para diagnóstico en lugar de
+        // matchearlo, porque Prisma reporta nombres de índices raw-SQL de
+        // forma inconsistente entre versiones para índices ausentes del PSL.
+        if (e.code === 'P2002') {
+            console.warn('[openRegister] P2002 target:', e.meta?.target);
+            throw Object.assign(
+                new Error('Otra terminal abrió la caja de esta tienda hace un instante. Actualizá la pantalla para operar sobre la caja vigente.'),
+                { status: 409, code: 'CASH_REGISTER_ALREADY_OPEN', cause: e }
+            );
+        }
+        throw e;
+    }
 };
 
 const closeRegister = async (data, user) => {
@@ -93,69 +116,102 @@ const closeRegister = async (data, user) => {
         throw new Error('No tienes una tienda asignada para cerrar la caja de esta sucursal.');
     }
 
-    const openRegister = await prisma.cashRegister.findFirst({
-        where: { storeId: user.storeId, status: 'OPEN' }
+    // Chequeo amistoso, NO atómico, previo a la transacción (igual criterio
+    // que Level 1: rápido y simpático en el caso no-concurrente). `select:
+    // { id: true }` es deliberado: hace imposible, por construcción, derivar
+    // los totales de esta pre-lectura — openingAmount y el snapshot de
+    // orders/movements se leen DESPUÉS del flip, dentro de la transacción.
+    const target = await prisma.cashRegister.findFirst({
+        where: { storeId: user.storeId, status: 'OPEN' },
+        select: { id: true }
     });
 
-    if (!openRegister) {
+    if (!target) {
         throw new Error('No hay ninguna caja abierta en esta tienda para cerrar.');
     }
 
-    // Calcular el expected amount: openingAmount + order sales + income movements - expense movements
-    
-    // 1. Obtener ordenes vinculadas a esta caja (todas las que no estén canceladas)
-    const orders = await prisma.order.findMany({
-        where: { 
-            cashRegisterId: openRegister.id, 
-            status: { not: 'CANCELLED' } 
-        },
-        include: { orderPayments: true }
-    });
-    
-    // Solo sumamos el efectivo para el arqueo de caja física
-    const ordersTotalEfectivo = sum(orders, (order) => {
-        // Si hay desglose de pagos, sumamos solo lo que fue en efectivo
-        if (order.orderPayments && order.orderPayments.length > 0) {
-            return sum(
-                order.orderPayments.filter(p => p.paymentMethod.toLowerCase() === 'efectivo'),
-                p => p.amount
+    return await prisma.$transaction(async (tx) => {
+        // (1) FLIP FIRST — write condicional, exactly-once, toma el lock
+        //     exclusivo de la fila. `closedByUserId` es un escalar: updateMany
+        //     no acepta `closedByUser: { connect }`.
+        const { count } = await tx.cashRegister.updateMany({
+            where: { id: target.id, status: 'OPEN' },
+            data: { status: 'CLOSED', closedByUserId: user.id, closedAt: new Date() }
+        });
+
+        if (count === 0) {
+            throw Object.assign(
+                new Error('La caja ya fue cerrada desde otra terminal. Actualizá la pantalla para ver el cierre vigente.'),
+                { status: 409, code: 'CASH_REGISTER_ALREADY_CLOSED' }
             );
         }
-        // Fallback para órdenes antiguas sin desglose
-        const isEfectivo = !order.paymentMethod || order.paymentMethod.toLowerCase() === 'efectivo';
-        return isEfectivo ? order.amoutPayed : 0;
+
+        // (2) RE-LECTURA POST-WRITE — updateMany sólo devuelve { count }.
+        //     openingAmount viene de ACÁ, nunca de la pre-lectura. Misma regla
+        //     que previousStock/balanceAfter en Level 1.
+        const openRegisterRow = await tx.cashRegister.findUnique({ where: { id: target.id } });
+
+        // Snapshot DESPUÉS del flip: cualquier binder que ya tenía el lock
+        // adquirido ya commiteó (por eso esta tx pudo avanzar); cualquier
+        // binder que todavía no lo tenía va a ser rechazado con 409. Ninguno
+        // puede aterrizar entre estas dos operaciones.
+
+        // Calcular el expected amount: openingAmount + order sales + income movements - expense movements
+
+        // 1. Obtener ordenes vinculadas a esta caja (todas las que no estén canceladas)
+        const orders = await tx.order.findMany({
+            where: {
+                cashRegisterId: target.id,
+                status: { not: 'CANCELLED' }
+            },
+            include: { orderPayments: true }
+        });
+
+        // Solo sumamos el efectivo para el arqueo de caja física
+        const ordersTotalEfectivo = sum(orders, (order) => {
+            // Si hay desglose de pagos, sumamos solo lo que fue en efectivo
+            if (order.orderPayments && order.orderPayments.length > 0) {
+                return sum(
+                    order.orderPayments.filter(p => p.paymentMethod.toLowerCase() === 'efectivo'),
+                    p => p.amount
+                );
+            }
+            // Fallback para órdenes antiguas sin desglose
+            const isEfectivo = !order.paymentMethod || order.paymentMethod.toLowerCase() === 'efectivo';
+            return isEfectivo ? order.amoutPayed : 0;
+        });
+
+        // 2. Obtener movimientos de caja manuales
+        const movements = await tx.cashMovement.findMany({
+            where: { cashRegisterId: target.id }
+        });
+
+        const income = sum(movements.filter(m => m.type === 'INCOME'), m => m.amount);
+        const expense = sum(movements.filter(m => m.type === 'EXPENSE'), m => m.amount);
+
+        // El monto esperado físico es: apertura + ventas en efectivo + ingresos manuales - retiros manuales
+        const expectedAmount = round(
+            money(openRegisterRow.openingAmount).plus(ordersTotalEfectivo).plus(income).minus(expense)
+        );
+        const difference = round(money(closingAmount).minus(expectedAmount));
+
+        // (3) Write de totales — un `update` plano es seguro: esta tx ya tiene
+        //     el lock exclusivo y ya probó que es la ganadora exactly-once.
+        //     Devuelve la fila completa, que es el contrato que
+        //     tests/scenarios/movement-validation.test.js:143-155 verifica
+        //     (`closed.expectedAmount`, `closed.difference`).
+        return await tx.cashRegister.update({
+            where: { id: target.id },
+            data: {
+                closingAmount: round(closingAmount),
+                expectedAmount: expectedAmount,
+                difference: difference,
+                observation: user.isSimulating
+                    ? `${observation || ''} (Simulada por SISTEMA)`.trim()
+                    : (observation || null)
+            }
+        });
     });
-
-    // 2. Obtener movimientos de caja manuales
-    const movements = await prisma.cashMovement.findMany({
-        where: { cashRegisterId: openRegister.id }
-    });
-
-    const income = sum(movements.filter(m => m.type === 'INCOME'), m => m.amount);
-    const expense = sum(movements.filter(m => m.type === 'EXPENSE'), m => m.amount);
-
-    // El monto esperado físico es: apertura + ventas en efectivo + ingresos manuales - retiros manuales
-    const expectedAmount = round(
-        money(openRegister.openingAmount).plus(ordersTotalEfectivo).plus(income).minus(expense)
-    );
-    const difference = round(money(closingAmount).minus(expectedAmount));
-
-    const closedCaja = await prisma.cashRegister.update({
-        where: { id: openRegister.id },
-        data: {
-            status: 'CLOSED',
-            closedByUser: { connect: { id: user.id } },
-            closedAt: new Date(),
-            closingAmount: round(closingAmount),
-            expectedAmount: expectedAmount,
-            difference: difference,
-            observation: user.isSimulating
-                ? `${observation || ''} (Simulada por SISTEMA)`.trim()
-                : (observation || null)
-        }
-    });
-
-    return closedCaja;
 };
 
 const getCurrentRegister = async (user) => {
