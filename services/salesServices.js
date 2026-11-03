@@ -178,6 +178,22 @@ const create = async (saleData, user) => {
       }
     }
 
+    // ── PASO 1.5: Re-afirmar que la caja sigue OPEN (guard atómico) ─
+    // PRIMER WRITE de la transacción (design.md Decisión 2): debe ir antes
+    // de cualquier statement que tome un lock sobre una fila referenciada
+    // por CashRegister (DiscountRule en PASO 4, CurrentAccount en PASO 8b,
+    // Product en PASO 10) para preservar el orden de locks
+    // CashRegister < DiscountRule < CurrentAccount < Product y evitar un
+    // deadlock por upgrade de lock. Va DESPUÉS de PASO 1 (solo lectura, sin
+    // lock) para no mover la carrera de stock detrás de esta guarda —
+    // mover esto antes de PASO 1 degradaría tests/concurrency/sale-race.test.js
+    // de un 409 atómico a un 400 amistoso.
+    await cajaServices.assertRegisterOpen(
+      tx,
+      currentRegister.id,
+      'La caja se cerró mientras confirmabas la venta. Abrí la caja de nuevo para continuar.'
+    );
+
     // ── PASO 2: Construir cartItems usando precios de DB ─────────
     const cartItems = items.map(item => {
       const product = productMap.get(item.id);
