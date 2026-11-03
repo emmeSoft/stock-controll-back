@@ -27,6 +27,11 @@ const tests = [
   './scenarios/cancel-reverses-debt.test.js',
   './concurrency/stock-edit-race.test.js',
   './scenarios/movement-validation.test.js',
+  './concurrency/caja-close-race.test.js',
+  './concurrency/sale-vs-caja-close-race.test.js',
+  './concurrency/cash-movement-vs-caja-close-race.test.js',
+  './concurrency/caja-open-race.test.js',
+  './integrity/caja-open-index.test.js',
 ];
 
 async function main() {
