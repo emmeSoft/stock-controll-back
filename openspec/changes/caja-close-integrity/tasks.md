@@ -56,13 +56,13 @@ Chain strategy: pending
 
 ## Phase 4: Unit D — Backend Test Scripts (4 Concurrency + 1 Integrity)
 
-- [ ] 4.1 `tests/concurrency/caja-close-race.test.js`: reuse `payment-race.test.js`'s two-party `$transaction` barrier; barrier(2) over two `closeRegister` calls — exactly one fulfilled, one 409/`CASH_REGISTER_ALREADY_CLOSED`, winner's totals persisted. Traces: "Concurrent double close."
-- [ ] 4.2 `tests/concurrency/sale-vs-caja-close-race.test.js`: CASO 1 barrier(2) sale‖close (assert invariant, not interleaving); CASO 2 deterministic close-first (sale rejected, zero `order` rows); CASO 3 deterministic sale-first (`expectedAmount` includes the sale); global assertion no `order.createdAt` later than its register's `closedAt`. Traces: "Sale committed in the close window."
-- [ ] 4.3 `tests/concurrency/cash-movement-vs-caja-close-race.test.js`: CASO 1 `createMovement`‖close, CASO 2 `registerPayment`‖close, same barrier pattern. Traces: "Manual movement or cash CC payment committed in the close window."
-- [ ] 4.4 `tests/concurrency/caja-open-race.test.js`: barrier on `svcPrisma.cashRegister.create` (no `$transaction` to patch here); two `openRegister` calls for the same store, exactly one fulfilled, one 409/`CASH_REGISTER_ALREADY_OPEN`; fixture needs real `bcrypt.hash`. Traces: "Two terminals race to open the same store's register."
-- [ ] 4.5 `tests/integrity/caja-open-index.test.js`: assert `CashRegister_one_open_per_store` exists in `pg_indexes`; assert a raw second-OPEN insert is rejected.
-- [ ] 4.6 Register all 5 scripts in `tests/run-all.js`.
-- [ ] 4.7 Regression re-run (mandatory before merge): `sale-race.test.js`, `payment-race.test.js`, `movement-validation.test.js` all still green.
+- [x] 4.1 `tests/concurrency/caja-close-race.test.js`: reuse `payment-race.test.js`'s two-party `$transaction` barrier; barrier(2) over two `closeRegister` calls — exactly one fulfilled, one 409/`CASH_REGISTER_ALREADY_CLOSED`, winner's totals persisted. Traces: "Concurrent double close."
+- [x] 4.2 `tests/concurrency/sale-vs-caja-close-race.test.js`: CASO 1 barrier(2) sale‖close (assert invariant, not interleaving); CASO 2 deterministic close-first (sale rejected, zero `order` rows); CASO 3 deterministic sale-first (`expectedAmount` includes the sale); global assertion no `order.createdAt` later than its register's `closedAt`. Traces: "Sale committed in the close window."
+- [x] 4.3 `tests/concurrency/cash-movement-vs-caja-close-race.test.js`: CASO 1 `createMovement`‖close, CASO 2 `registerPayment`‖close, same barrier pattern. Traces: "Manual movement or cash CC payment committed in the close window."
+- [x] 4.4 `tests/concurrency/caja-open-race.test.js`: barrier on `svcPrisma.cashRegister.create` (no `$transaction` to patch here); two `openRegister` calls for the same store, exactly one fulfilled, one 409/`CASH_REGISTER_ALREADY_OPEN`; fixture needs real `bcrypt.hash`. Traces: "Two terminals race to open the same store's register."
+- [x] 4.5 `tests/integrity/caja-open-index.test.js`: assert `CashRegister_one_open_per_store` exists in `pg_indexes`; assert a raw second-OPEN insert is rejected.
+- [x] 4.6 Register all 5 scripts in `tests/run-all.js`.
+- [x] 4.7 Regression re-run (mandatory before merge): `sale-race.test.js`, `payment-race.test.js`, `movement-validation.test.js` all still green.
 
 ## Phase 5: Unit E — Frontend Double-Submit Guards
 
