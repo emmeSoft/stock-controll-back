@@ -247,13 +247,14 @@ async function seedRBAC() {
       console.log(`  ✅ Migrated user ${user.email}: ${legacyRole} → ${newRoleId ? Object.entries(roleMap).find(([k,v]) => v === newRoleId)?.[0] : 'VENDEDOR'}`);
     }
 
-    // 5. Establecer maxi@maxi.com como SISTEMA
+    // 5. Establecer maxi@maxi.com como SISTEMA (o crearlo si la base está recién resetada)
     console.log('\n👤 Estableciendo maxi@maxi.com como SISTEMA...');
     const maxiUser = await prisma.user.findUnique({ where: { email: 'maxi@maxi.com' } });
+    const sistemaRoleId = createdRoles['SISTEMA'];
+
     if (maxiUser) {
       const previousRoleId = maxiUser.roleId;
-      const sistemaRoleId = createdRoles['SISTEMA'];
-      
+
       await prisma.user.update({
         where: { id: maxiUser.id },
         data: { roleId: sistemaRoleId },
@@ -271,6 +272,25 @@ async function seedRBAC() {
       });
 
       console.log(`  ✅ maxi@maxi.com ahora es SISTEMA`);
+    } else {
+      // No existe (ej: justo después de un `migrate reset`) — lo creamos de cero
+      // en vez de depender de que alguien lo cargue a mano por Prisma Studio.
+      const bcrypt = require('bcrypt');
+      const created = await prisma.user.create({
+        data: {
+          storeId: null,
+          email: 'maxi@maxi.com',
+          password: await bcrypt.hash('123456', 10),
+          firstName: 'Maxi',
+          lastName: 'Sistema',
+          phoneNumber: '000000000',
+          address: 'N/A',
+          city: 'N/A',
+          roleId: sistemaRoleId,
+          mustChangePassword: true,
+        },
+      });
+      console.log(`  ✅ maxi@maxi.com no existía — creado como SISTEMA (password temporal: 123456, cambiar al entrar)`);
     }
 
     console.log('\n🎉 RBAC seeding complete!');
