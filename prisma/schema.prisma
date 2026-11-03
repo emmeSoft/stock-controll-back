@@ -227,6 +227,15 @@ model Image {
   store        store?      @relation(fields: [storeId], references: [id])
 }
 
+// NOTE: at most one `CashRegister` row per `storeId` may have `status =
+// 'OPEN'` at a time. This is enforced by a partial unique index
+// (`CashRegister_one_open_per_store`, migration
+// `<ts>_cashregister_one_open_per_store`) that Prisma cannot express in the
+// schema (no predicate argument on `@@unique` as of Prisma 6.19.1). If you
+// ever regenerate the migration baseline, re-add that hand-written migration
+// -- it will NOT be inferred from this file. See
+// prisma/migrations/<ts>_cashregister_one_open_per_store/migration.sql and
+// tests/integrity/caja-open-index.test.js.
 model CashRegister {
   id             String             @id @default(cuid())
   storeId        String
