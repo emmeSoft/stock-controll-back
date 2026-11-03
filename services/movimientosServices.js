@@ -20,18 +20,32 @@ const createMovement = async (data, user) => {
         throw Object.assign(new Error('El monto del movimiento debe ser un número positivo y finito.'), { status: 400 });
     }
 
-    const movement = await prisma.cashMovement.create({
-        data: {
-            store: { connect: { id: user.storeId } },
-            cashRegister: { connect: { id: currentRegister.id } },
-            user: { connect: { id: user.id } },
-            type: type,
-            amount: round(amount),
-            description: user.isSimulating
-                ? `${description || ''} (Simulada por SISTEMA)`.trim()
-                : (description || null),
-            reference: reference || null
-        }
+    // $transaction nueva (createMovement no tenía ninguna): la guarda
+    // atómica necesita retener el lock de CashRegister hasta que el
+    // cashMovement.create commitee, y debe ser el PRIMER write de la
+    // transacción (design.md Decisión 2) — antes del insert de
+    // cashMovement, que toma un lock implícito FOR KEY SHARE sobre la fila
+    // referenciada por la FK.
+    const movement = await prisma.$transaction(async (tx) => {
+        await cajaServices.assertRegisterOpen(
+            tx,
+            currentRegister.id,
+            'La caja se cerró mientras confirmabas el movimiento. Abrí la caja de nuevo para continuar.'
+        );
+
+        return await tx.cashMovement.create({
+            data: {
+                store: { connect: { id: user.storeId } },
+                cashRegister: { connect: { id: currentRegister.id } },
+                user: { connect: { id: user.id } },
+                type: type,
+                amount: round(amount),
+                description: user.isSimulating
+                    ? `${description || ''} (Simulada por SISTEMA)`.trim()
+                    : (description || null),
+                reference: reference || null
+            }
+        });
     });
 
     return movement;

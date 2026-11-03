@@ -295,6 +295,18 @@ const registerPayment = async (data, user) => {
   // ── Transacción atómica ──────────────────────────────────────
   const result = await prisma.$transaction(async (tx) => {
 
+    // 0. Re-afirmar que la caja sigue OPEN (guard atómico) — PRIMER WRITE
+    //    de la transacción (design.md Decisión 2), antes del guard de
+    //    balance de CurrentAccount, para preservar el orden de locks
+    //    CashRegister < CurrentAccount y evitar un deadlock por upgrade de
+    //    lock (el cashMovement.create del paso 3 toma un lock implícito
+    //    FOR KEY SHARE sobre la fila de CashRegister referenciada por FK).
+    await cajaServices.assertRegisterOpen(
+      tx,
+      currentRegister.id,
+      'La caja se cerró mientras confirmabas el pago. Abrí la caja de nuevo para continuar.'
+    );
+
     // 1. Decrementar saldo — SOLO si el saldo sigue alcanzando (guard atómico)
     const { count } = await tx.currentAccount.updateMany({
       where: { id: accountPre.id, status: 'OPEN', balance: { gte: amount } },
