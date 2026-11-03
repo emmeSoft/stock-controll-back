@@ -5,16 +5,15 @@ const { toNumber } = require('../utils/money');
 const createProduct = async (req, res) => {
   const dataProduct = req.body;
 
-  if (!dataProduct.categoryId) {
-    throw new Error("El producto debe tener una categoría");
-  }
-
-
   try {
+    if (!dataProduct.categoryId) {
+      throw Object.assign(new Error("El producto debe tener una categoría"), { status: 400 });
+    }
+
     const result = await productsServices.create(dataProduct, req.user);
     res.json(result);
   } catch (error) {
-    res.status(401).json({ message: error.message });
+    res.status(error.status || 400).json({ message: error.message });
   }
 };
 
