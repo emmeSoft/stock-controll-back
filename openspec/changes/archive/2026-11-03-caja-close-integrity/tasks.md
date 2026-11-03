@@ -66,17 +66,17 @@ Chain strategy: pending
 
 ## Phase 5: Unit E — Frontend Double-Submit Guards
 
-- [ ] 5.1 `CashRegister.jsx`: `isProcessing` guard + early return + disabled button + `finally` reset on `executeOpen`/`executeClose`; `executeMovement` additionally closes its `ConfirmModal` before awaiting. Traces: pos-submit-safety scenarios 1–3.
-- [ ] 5.2 `RegisterPaymentModal.jsx`: `isSubmitting` guard + disabled submit control.
-- [ ] 5.3 `CurrentAccountDetails.jsx` `handleRegisterPayment`: parent guard matching 5.2. Traces: pos-submit-safety scenario 4.
+- [x] 5.1 `CashRegister.jsx`: `isProcessing` guard + early return + disabled button + `finally` reset on `executeOpen`/`executeClose`; `executeMovement` additionally closes its `ConfirmModal` before awaiting. Traces: pos-submit-safety scenarios 1–3.
+- [x] 5.2 `RegisterPaymentModal.jsx`: `isSubmitting` guard + disabled submit control.
+- [x] 5.3 `CurrentAccountDetails.jsx` `handleRegisterPayment`: parent guard matching 5.2. Traces: pos-submit-safety scenario 4.
 
 ## Phase 6: Unit F — Frontend UX Wiring (`code`-Driven Recovery)
 
-- [ ] 6.1 Create `src/components/Modals/CashRegisterClosedModal.jsx`: wraps `ConfirmModal`; derives label/action from `code` (`CASH_REGISTER_CLOSED`→"Abrir caja"; `ALREADY_CLOSED`/`ALREADY_OPEN`→"Actualizar"); owns the 5 locked copy strings.
-- [ ] 6.2 `SalesDashboard.jsx`: read initial tab from `useSearchParams()` (`?tab=register`).
-- [ ] 6.3 `NewSale.jsx`: in the sale-create catch, if `status===409 && data.code` open the modal; else keep the existing `alert`.
-- [ ] 6.4 `CashRegister.jsx`: wire the modal for its three codes (confirm action = refetch, already on the register tab).
-- [ ] 6.5 `RegisterPaymentModal.jsx` + `CurrentAccountDetails.jsx`: wire the modal, confirm action `navigate('/sells?tab=register')`.
+- [x] 6.1 Create `src/components/Modals/CashRegisterClosedModal.jsx`: wraps `ConfirmModal`; derives label/action from `code` (`CASH_REGISTER_CLOSED`→"Abrir caja"; `ALREADY_CLOSED`/`ALREADY_OPEN`→"Actualizar"); owns the 5 locked copy strings.
+- [x] 6.2 `SalesDashboard.jsx`: read initial tab from `useSearchParams()` (`?tab=register`).
+- [x] 6.3 `NewSale.jsx`: in the sale-create catch, if `status===409 && data.code` open the modal; else keep the existing `alert`.
+- [x] 6.4 `CashRegister.jsx`: wire the modal for its three codes (confirm action = refetch, already on the register tab).
+- [x] 6.5 `RegisterPaymentModal.jsx` + `CurrentAccountDetails.jsx`: wire the modal, confirm action `navigate('/sells?tab=register')`. (`RegisterPaymentModal.jsx` needed no code change — it never sees the axios error; only the parent `CurrentAccountDetails.handleRegisterPayment` does.)
 
 ## Phase 7: Deployed Migration (Ops — Not a Code PR, Separate Human Consent Required)
 
