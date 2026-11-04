@@ -24,6 +24,27 @@ const { money, round, toNumber, sum, D } = require('../utils/money');
 // ─────────────────────────────────────────────────────────────────
 
 /**
+ * Tolerancia de redondeo para comparaciones de pago: max($0.01, 0.1% del
+ * monto), pero nunca más de $0.05.
+ *
+ * El piso de $0.01 y el 0.1% proporcional se mantienen sin cambios — son los
+ * únicos responsables de que montos chicos (ej. total $0.05) no queden con
+ * una tolerancia que vuelva el chequeo vacío. El techo de $0.05 es el único
+ * cambio real: antes la tolerancia crecía sin límite con el monto (una venta
+ * de $120.000 toleraba hasta $120 de diferencia), lo que era un hueco real de
+ * integridad de plata, no una concesión a redondeo legítimo — todo este
+ * código ya usa Decimal exacto (ver money-stock-integrity), así que no hay
+ * acumulación de error de punto flotante que justifique que la tolerancia
+ * escale indefinidamente.
+ *
+ * @param {Decimal|number} total — monto de referencia (ej. total de la venta)
+ * @returns {Decimal}
+ */
+function paymentTolerance(total) {
+  return D.min(money(0.05), D.max(money(0.01), money(total).times(0.001)));
+}
+
+/**
  * Valida que paymentBreakdown existe, no está vacío
  * y que la suma declarada coincide con el total calculado en backend.
  *
@@ -37,13 +58,7 @@ function validatePayments(paymentBreakdown, computedTotal) {
   const totalPaid = sum(paymentBreakdown, (p) => p.amount);
   const total = money(computedTotal);
 
-  // Tolerancia fija de $0.05. Antes era dinámica (max($0.01, 0.1% del total)),
-  // justificada por acumulación de error de punto flotante proporcional al
-  // monto — pero todo este código ya usa Decimal exacto (ver money-stock-integrity),
-  // así que esa justificación quedó obsoleta: una tolerancia que crece con el
-  // monto dejaba pasar diferencias de hasta $100+ en ventas grandes, un hueco
-  // real de integridad de plata, no una concesión a redondeo legítimo.
-  const tolerance = money(0.05);
+  const tolerance = paymentTolerance(total);
 
   // SEGURIDAD: Solo validamos que el total pagado sea SUFICIENTE para cubrir el total calculado.
   // Si el cliente paga de más, se asume que es vuelto o excedente contable. (SC-3.4)
@@ -225,7 +240,7 @@ const create = async (saleData, user) => {
     // ── PASO 2.5: Validar integridad de precios base (Anti-Desincronización) ──
     // El frontend envía `amount` = subtotal SIN descuentos (lo que ve el vendedor/comprador).
     // El backend recalcula ese mismo subtotal desde DB y los compara ANTES de cualquier
-    // cálculo de descuentos. Si difieren más de $0.05, la sesión está desactualizada.
+    // cálculo de descuentos. Si difieren más de la tolerancia, la sesión está desactualizada.
     //
     // SEGURIDAD: este valor NUNCA se usa para calcular descuentos ni el total a cobrar.
     // Su único propósito es detectar desincronización de pantalla.
@@ -233,7 +248,7 @@ const create = async (saleData, user) => {
       throw new Error('El campo `amount` (subtotal sin descuentos) es obligatorio para registrar una venta.');
     }
     const backendBaseSubtotal = sum(cartItems, (i) => money(i.unitPrice).times(i.quantity));
-    const priceIntegrityTolerance = money(0.05);
+    const priceIntegrityTolerance = paymentTolerance(backendBaseSubtotal);
     const priceIntegrityDiff = money(frontendSubtotal).minus(backendBaseSubtotal).abs();
     if (priceIntegrityDiff.gt(priceIntegrityTolerance)) {
       throw new Error(
@@ -392,7 +407,7 @@ const create = async (saleData, user) => {
       const nonCCPayments = paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE');
       const nonCCTotal = sum(nonCCPayments, (p) => p.amount);
 
-      const tolerance = money(0.05);
+      const tolerance = paymentTolerance(cashPaid);
 
       if (nonCCTotal.lt(money(cashPaid).minus(tolerance))) {
         throw new Error(

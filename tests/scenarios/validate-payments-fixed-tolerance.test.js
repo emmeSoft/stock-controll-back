@@ -1,10 +1,17 @@
 /**
  * validate-payments-fixed-tolerance.test.js
  * ─────────────────────────────────────────────────────────────────
- * Cubre el cambio de tolerancia en `validatePayments` (services/salesServices.js):
- * antes era dinámica (`max($0.01, 0.1% del total)`), lo que en una venta de
- * $120.000 aceptaba hasta $120 de diferencia. Ahora es fija en $0.05 —
- * independiente del monto de la venta.
+ * Cubre `paymentTolerance`/`validatePayments` (services/salesServices.js):
+ * la tolerancia sigue siendo `max($0.01, 0.1% del monto)` — sin cambios en
+ * el piso ni en el crecimiento proporcional — pero ahora tiene un TECHO de
+ * $0.05. Antes crecía sin límite (una venta de $120.000 toleraba hasta $120
+ * de diferencia); ahora nunca supera $0.05 sin importar el monto.
+ *
+ * Primer intento de este fix (ya corregido) reemplazaba la fórmula entera
+ * por un valor fijo de $0.05, lo que rompía ventas CHICAS: para un total
+ * ≤ $0.05 el chequeo quedaba vacío (aceptaba pagar casi nada). De ahí los
+ * casos "venta chica" abajo — son regresión-guards de ese bug encontrado
+ * en code review antes de pushear.
  *
  * No usa la base de datos (validatePayments es una función pura).
  *
@@ -22,6 +29,11 @@ function assert(condition, message) {
   console.log(`✅ ${message}`);
 }
 
+function doesNotThrow(fn, message) {
+  fn();
+  console.log(`✅ ${message}`);
+}
+
 function throws(fn, message) {
   try {
     fn();
@@ -32,40 +44,47 @@ function throws(fn, message) {
   }
 }
 
-console.log('\n--- CASO: diferencia de exactamente $0.05 se tolera ---');
-assert(
-  (() => { validatePayments([{ method: 'EFECTIVO', amount: 99.95 }], 100); return true; })(),
-  'Venta de $100, pagado $99.95 (diff $0.05): no lanza'
+console.log('\n--- CASO: venta mediana (tolerancia = 0.1% del total, sin tocar el techo) ---');
+doesNotThrow(
+  () => validatePayments([{ method: 'EFECTIVO', amount: 99.95 }], 100),
+  'Venta de $100, pagado $99.95 (diff $0.05 = 0.1% de 100): no lanza'
 );
-
-console.log('\n--- CASO: diferencia de $0.06 NO se tolera ---');
 throws(
   () => validatePayments([{ method: 'EFECTIVO', amount: 99.94 }], 100),
-  'Venta de $100, pagado $99.94 (diff $0.06): lanza error de pago insuficiente'
+  'Venta de $100, pagado $99.94 (diff $0.06 > tolerancia $0.05): lanza'
 );
 
-console.log('\n--- CASO CLAVE: en una venta grande, la tolerancia sigue siendo $0.05, no escala ---');
+console.log('\n--- CASO CLAVE: venta grande, la tolerancia queda topeada en $0.05 ---');
 throws(
   () => validatePayments([{ method: 'EFECTIVO', amount: 119940 }], 120000),
-  'Venta de $120.000, pagado $119.940 (diff $60): lanza error — antes la tolerancia dinámica (0.1%) habría aceptado hasta $120 de diferencia'
+  'Venta de $120.000, pagado $119.940 (diff $60): lanza — antes (sin techo) el 0.1% habría tolerado hasta $120'
 );
-assert(
-  (() => { validatePayments([{ method: 'EFECTIVO', amount: 119999.95 }], 120000); return true; })(),
-  'Venta de $120.000, pagado $119.999,95 (diff $0.05): no lanza — misma tolerancia fija que en una venta chica'
+doesNotThrow(
+  () => validatePayments([{ method: 'EFECTIVO', amount: 119999.95 }], 120000),
+  'Venta de $120.000, pagado $119.999,95 (diff $0.05, en el techo): no lanza'
 );
 
-console.log('\n--- CASO: pago exacto siempre pasa ---');
-assert(
-  (() => { validatePayments([{ method: 'EFECTIVO', amount: 100 }], 100); return true; })(),
+console.log('\n--- CASO CLAVE: venta chica, el piso de $0.01 sigue vigente (no el techo de $0.05) ---');
+throws(
+  () => validatePayments([{ method: 'EFECTIVO', amount: 0.01 }], 0.05),
+  'Venta de $0.05, pagado $0.01 (diff $0.04 > tolerancia real $0.01): lanza — ' +
+  'el bug corregido habría usado tolerancia $0.05 y dejado pasar esto'
+);
+doesNotThrow(
+  () => validatePayments([{ method: 'EFECTIVO', amount: 0.04 }], 0.05),
+  'Venta de $0.05, pagado $0.04 (diff $0.01 = piso): no lanza'
+);
+
+console.log('\n--- CASO: pago exacto y sobrepago siempre pasan ---');
+doesNotThrow(
+  () => validatePayments([{ method: 'EFECTIVO', amount: 100 }], 100),
   'Pago exacto: no lanza'
 );
-
-console.log('\n--- CASO: pagar de más siempre se acepta (SC-3.4, se asume vuelto) ---');
-assert(
-  (() => { validatePayments([{ method: 'EFECTIVO', amount: 150 }], 100); return true; })(),
-  'Venta de $100, pagado $150: no lanza (excedente se asume vuelto/contable)'
+doesNotThrow(
+  () => validatePayments([{ method: 'EFECTIVO', amount: 150 }], 100),
+  'Venta de $100, pagado $150: no lanza (excedente se asume vuelto/contable, SC-3.4)'
 );
 
 console.log('\n========================================');
-console.log('✅ TODOS LOS TESTS DE validatePayments (tolerancia fija) PASARON');
+console.log('✅ TODOS LOS TESTS DE validatePayments (tolerancia con techo) PASARON');
 console.log('========================================');
