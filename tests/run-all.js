@@ -32,6 +32,8 @@ const tests = [
   './concurrency/cash-movement-vs-caja-close-race.test.js',
   './concurrency/caja-open-race.test.js',
   './integrity/caja-open-index.test.js',
+  './integrity/caja-expected-with-change.test.js',
+  './scenarios/cash-change.test.js',
   './discountEngine/engine-version-forced-universal.test.js',
   './discountEngine/max-units-rule-selection.test.js',
   './discountEngine/payment-breakdown-proportion.test.js',

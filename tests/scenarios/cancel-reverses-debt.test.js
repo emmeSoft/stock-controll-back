@@ -216,7 +216,7 @@ async function main() {
       {
         items: [{ id: cashProduct.id, quantity: 1 }],
         clientId: client.id, // el cliente SÍ tiene cuenta abierta, pero esta venta es 100% efectivo
-        paymentBreakdown: [{ method: 'Efectivo', amount: 500 }],
+        paymentBreakdown: [{ method: 'Efectivo', amount: 500, receivedAmount: 500 }],
         amount: 500,
       },
       authUser
