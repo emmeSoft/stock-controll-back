@@ -487,8 +487,8 @@ const create = async (saleData, user) => {
     for (const leg of paymentBreakdown) {
       if (!isCashMethod(leg.method)) continue;
 
-      const legAmount = money(leg.amount);
-      const received = money(leg.receivedAmount);
+      const legAmount = round(money(leg.amount));
+      const received = round(money(leg.receivedAmount));
 
       if (received.lt(legAmount)) {
         throw Object.assign(
@@ -501,6 +501,7 @@ const create = async (saleData, user) => {
       }
 
       leg._changeAmount = round(received.minus(legAmount));
+      leg._receivedAmount = received;
     }
 
     const paymentMethodSummary = hasCCPayment
@@ -553,7 +554,7 @@ const create = async (saleData, user) => {
           orderId: order.id,
           paymentMethod: payment.method,
           amount: payment.amount,
-          receivedAmount: isCash ? payment.receivedAmount : null,
+          receivedAmount: isCash ? payment._receivedAmount : null,
           changeAmount: isCash ? payment._changeAmount : null,
         },
       });
@@ -703,11 +704,11 @@ const create = async (saleData, user) => {
     // tanto para este payload post-venta como para una orden releída de DB.
     const totalChange = round(sum(paymentBreakdown, (p) => p._changeAmount));
     const enrichedOrderPayments = paymentBreakdown.map((p) => {
-      const { _changeAmount, ...rest } = p;
+      const { _changeAmount, _receivedAmount, ...rest } = p;
       const isCash = isCashMethod(p.method);
       return {
         ...rest,
-        receivedAmount: isCash ? p.receivedAmount : null,
+        receivedAmount: isCash ? _receivedAmount : null,
         changeAmount: isCash ? _changeAmount : null,
       };
     });
