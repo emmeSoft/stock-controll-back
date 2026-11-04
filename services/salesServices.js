@@ -33,7 +33,6 @@ const { money, round, toNumber, sum, isPositiveAmount, D } = require('../utils/m
  *
  * ¿Por qué $0.50 de techo y no algo más chico? Esta misma función se usa en
  * 2 lugares con razones distintas para necesitar margen:
- * con razones distintas para necesitar margen:
  *  1. `validatePayments` (pago vs. total con descuentos ya aplicados):
  *     `discountService.mergeEngineResults` (ver nota en `create()`, sección
  *     post-motor-universal) todavía hace su aritmética de cascada con `number`
