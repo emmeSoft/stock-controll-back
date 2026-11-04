@@ -37,6 +37,7 @@ const tests = [
   './discountEngine/payment-breakdown-proportion.test.js',
   './discountEngine/payment-breakdown-amount-validation.test.js',
   './scenarios/sale-create-invalid-payment-amount.test.js',
+  './scenarios/validate-payments-fixed-tolerance.test.js',
 ];
 
 async function main() {

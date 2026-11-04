@@ -37,12 +37,13 @@ function validatePayments(paymentBreakdown, computedTotal) {
   const totalPaid = sum(paymentBreakdown, (p) => p.amount);
   const total = money(computedTotal);
 
-  // Tolerancia dinámica: max($0.01, 0.1% del total calculado).
-  // Justificación: punto flotante acumula errores proporcionales al monto.
-  // Una venta de $100.000 puede diferir $0.50 por redondeo legítimo de múltiples
-  // descuentos; rechazarla por $0.01 sería un falso negativo.
-  // El 0.1% sigue siendo lo suficientemente estricto para detectar manipulaciones reales.
-  const tolerance = D.max(money(0.01), total.times(0.001));
+  // Tolerancia fija de $0.05. Antes era dinámica (max($0.01, 0.1% del total)),
+  // justificada por acumulación de error de punto flotante proporcional al
+  // monto — pero todo este código ya usa Decimal exacto (ver money-stock-integrity),
+  // así que esa justificación quedó obsoleta: una tolerancia que crece con el
+  // monto dejaba pasar diferencias de hasta $100+ en ventas grandes, un hueco
+  // real de integridad de plata, no una concesión a redondeo legítimo.
+  const tolerance = money(0.05);
 
   // SEGURIDAD: Solo validamos que el total pagado sea SUFICIENTE para cubrir el total calculado.
   // Si el cliente paga de más, se asume que es vuelto o excedente contable. (SC-3.4)
@@ -224,7 +225,7 @@ const create = async (saleData, user) => {
     // ── PASO 2.5: Validar integridad de precios base (Anti-Desincronización) ──
     // El frontend envía `amount` = subtotal SIN descuentos (lo que ve el vendedor/comprador).
     // El backend recalcula ese mismo subtotal desde DB y los compara ANTES de cualquier
-    // cálculo de descuentos. Si difieren más del 0.1%, la sesión está desactualizada.
+    // cálculo de descuentos. Si difieren más de $0.05, la sesión está desactualizada.
     //
     // SEGURIDAD: este valor NUNCA se usa para calcular descuentos ni el total a cobrar.
     // Su único propósito es detectar desincronización de pantalla.
@@ -232,7 +233,7 @@ const create = async (saleData, user) => {
       throw new Error('El campo `amount` (subtotal sin descuentos) es obligatorio para registrar una venta.');
     }
     const backendBaseSubtotal = sum(cartItems, (i) => money(i.unitPrice).times(i.quantity));
-    const priceIntegrityTolerance = D.max(money(0.01), backendBaseSubtotal.times(0.001));
+    const priceIntegrityTolerance = money(0.05);
     const priceIntegrityDiff = money(frontendSubtotal).minus(backendBaseSubtotal).abs();
     if (priceIntegrityDiff.gt(priceIntegrityTolerance)) {
       throw new Error(
@@ -391,7 +392,7 @@ const create = async (saleData, user) => {
       const nonCCPayments = paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE');
       const nonCCTotal = sum(nonCCPayments, (p) => p.amount);
 
-      const tolerance = D.max(money(0.01), money(cashPaid).times(0.001));
+      const tolerance = money(0.05);
 
       if (nonCCTotal.lt(money(cashPaid).minus(tolerance))) {
         throw new Error(
@@ -827,6 +828,6 @@ const cancel = async (orderId, password, user) => {
   });
 };
 
-module.exports = { create, getAll, getById, cancel };
+module.exports = { create, getAll, getById, cancel, validatePayments };
 
 // REFRESH: Forzando reinicio para asegurar carga de validación flexible (SC-3.4)
