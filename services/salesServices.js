@@ -25,24 +25,35 @@ const { money, round, toNumber, sum, D } = require('../utils/money');
 
 /**
  * Tolerancia de redondeo para comparaciones de pago: max($0.01, 0.1% del
- * monto), pero nunca más de $0.50.
+ * monto), pero nunca más de $0.50. El piso de $0.01 y el 0.1% proporcional
+ * evitan que montos chicos (ej. total $0.05) queden con una tolerancia que
+ * vuelva el chequeo vacío. El techo es lo que cambió recién: antes la
+ * tolerancia crecía sin límite con el monto (una venta de $120.000 toleraba
+ * hasta $120 de diferencia), un hueco real de integridad de plata.
  *
- * El piso de $0.01 y el 0.1% proporcional se mantienen sin cambios — son los
- * únicos responsables de que montos chicos (ej. total $0.05) no queden con
- * una tolerancia que vuelva el chequeo vacío. El techo es el único cambio
- * real: antes la tolerancia crecía sin límite con el monto (una venta de
- * $120.000 toleraba hasta $120 de diferencia), un hueco real de integridad
- * de plata.
+ * ¿Por qué $0.50 de techo y no algo más chico? Esta misma función se usa en
+ * 2 lugares con razones distintas para necesitar margen:
+ * con razones distintas para necesitar margen:
+ *  1. `validatePayments` (pago vs. total con descuentos ya aplicados):
+ *     `discountService.mergeEngineResults` (ver nota en `create()`, sección
+ *     post-motor-universal) todavía hace su aritmética de cascada con `number`
+ *     nativo, redondeando a centavos en CADA paso de la cascada de descuentos
+ *     ORDER (vía `toNumber()`, que siempre redondea — ver utils/money.js). En
+ *     un carrito grande con muchas líneas/reglas en cascada, ese arrastre
+ *     legítimo puede superar unos pocos centavos — $0.50 es el propio ejemplo
+ *     que cita el comentario original de este archivo para ese escenario.
+ *  2. `priceIntegrityTolerance` (subtotal SIN descuentos, frontend vs. DB):
+ *     no hay cascada de descuentos acá, así que no hace falta ese margen —
+ *     pero $0.50 sigue siendo chico de sobra para seguir detectando una
+ *     sesión con precios desactualizados (un cambio de precio real casi
+ *     siempre mueve el subtotal mucho más que 50 centavos).
+ * Si algún día hace falta ajustar el margen de la cascada de descuentos (razón
+ * 1) sin tocar la detección de desincronización de precios (razón 2), separar
+ * esta función en dos en vez de subir este valor compartido.
  *
- * El techo NO es $0.01 ni queda sin techo: `discountService.mergeEngineResults`
- * (ver nota en salesServices.js `create()`, sección post-motor-universal) hace
- * su aritmética de cascada con `number` nativo todavía, redondeando a centavos
- * en CADA paso de la cascada de descuentos ORDER (vía `toNumber()`, que
- * siempre redondea — ver utils/money.js). En un carrito grande con muchas
- * líneas/reglas en cascada, ese arrastre legítimo de redondeo puede superar
- * unos pocos centavos. $0.50 es el propio ejemplo que cita el comentario
- * original de este archivo para ese escenario — cierra el hueco grande (240x
- * más ajustado que antes) sin arriesgar falsos rechazos de ventas correctas.
+ * El piso de $0.01 y el 0.1% proporcional aplican igual en ambos casos — son
+ * los responsables de que montos chicos (ej. total $0.05) no queden con una
+ * tolerancia que vuelva el chequeo vacío.
  *
  * @param {Decimal|number} total — monto de referencia (ej. total de la venta)
  * @returns {Decimal}
