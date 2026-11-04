@@ -475,8 +475,13 @@ model DiscountRule {
   conditions Json?
 
   // ─── Universal Discount Rules ─────────────────────────────────────
-  // Control por regla: "legacy" = 8 tipos rígidos, "universal" = campos composables
-  engineVersion String @default("legacy")
+  // Motor legacy retirado (no existe ninguna implementación real detrás de
+  // "legacy" en el código base — ver services/discountService.js). El
+  // server fuerza 'universal' en toda creación/edición sin importar lo que
+  // mande el cliente (sanitizeRuleInput); el default acá es solo defensa en
+  // profundidad para inserts que no pasen por ese camino (seeds, SQL manual).
+  // Ver migración de backfill para filas existentes con 'legacy'/null.
+  engineVersion String @default("universal")
 
   // Estructura universal (convive con conditions para backward compatibility):
   // {

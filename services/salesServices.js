@@ -14,8 +14,7 @@ const prisma = require('../db/database.prisma.js');
 const bcrypt = require('bcrypt');
 const cajaServices = require('./cajaServices');
 const discountService = require('./discountService');
-const { runPipeline } = require('./discountEngine');
-const { runUniversalPipeline } = require('./discountEngine/universal');
+const { runUniversalPipeline, validatePaymentBreakdownAmounts } = require('./discountEngine/universal');
 const currentAccountServices = require('./currentAccountServices');
 const { money, round, toNumber, sum, D } = require('../utils/money');
 
@@ -88,6 +87,20 @@ const create = async (saleData, user) => {
   if (!effectiveStoreId) {
     throw new Error('Debe especificar una tienda para la venta.');
   }
+
+  // ── Validación temprana de paymentBreakdown[].amount ───────────
+  // Corre SIEMPRE, para toda venta — a diferencia del guard que ya existe
+  // en evaluator.js (`validateTicketConditions`), que solo se ejecuta
+  // cuando hay una regla ORDER_LEVEL activa con `ticketConditions.
+  // paymentMethods` seteado (el caso RARO). Para el caso común (sin esa
+  // regla activa, la mayoría de las ventas) un `amount` malformado
+  // (string no numérico, ausente, cero, negativo, Infinity) llegaba sin
+  // validar hasta `validatePayments()` (más abajo) y los cálculos de
+  // `ccAmount`/`nonCCTotal`, y reventaba con un [DecimalError] sin
+  // `.status`/`.code` DENTRO de la transacción — filtrando un error interno
+  // al cliente en vez de un 400 limpio. Se valida acá, lo antes posible,
+  // ANTES de cualquier aritmética Decimal sobre `paymentBreakdown`.
+  validatePaymentBreakdownAmounts(paymentBreakdown ?? []);
 
   // ── Pre-checks fuera de tx (reads baratos, fallan rápido) ──────
 
@@ -231,29 +244,28 @@ const create = async (saleData, user) => {
       );
     }
 
-    // ── PASO 3: Ejecutar motor de descuentos (PATRÓN DUAL-ENGINE) ───
+    // ── PASO 3: Ejecutar motor de descuentos (motor universal) ───
     // Traer reglas de DB dentro de la tx para snapshot consistente.
     const allRules = await tx.discountRule.findMany({
       where: { storeId: effectiveStoreId, isActive: true },
     });
     const { legacyRules, universalRules } = discountService.splitRulesByEngine(allRules);
 
+    // Blindaje: en runtime estable `legacyRules` debería estar siempre vacío
+    // (el motor legacy fue retirado — no hay implementación real detrás de
+    // él, ver nota en discountService.splitRulesByEngine). Si aparece
+    // alguna, la ignoramos explícitamente en vez de ejecutarla contra el
+    // motor universal (eso producía un descuento $0 silencioso), pero lo
+    // señalamos para que no sea invisible.
+    if (legacyRules.length > 0) {
+      console.warn(
+        `[salesServices] ${legacyRules.length} regla(s) con engineVersion legacy/null ignoradas (motor legacy retirado). IDs: ${legacyRules.map(r => r.id).join(', ')}`
+      );
+    }
+
     // Calcular originalTotal una sola vez desde precios de DB (Decimal, sin
     // arrastre de punto flotante — usado para las validaciones de ESTE archivo).
     const originalTotal = sum(cartItems, (i) => money(i.unitPrice).times(i.quantity));
-
-    // Motor legacy (retrocompatibilidad)
-    const legacyContext = {
-      storeId: effectiveStoreId,
-      store: { maxDiscountPct: store?.maxDiscountPct ?? 80 },
-      clientId: clientId ?? null,
-      paymentMethods: paymentMethods ?? [],
-      items: cartItems,
-      rules: legacyRules,
-    };
-    const legacyResult = legacyRules.length > 0
-      ? await runPipeline(legacyContext)
-      : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
     // Motor universal
     const universalContext = {
@@ -267,7 +279,8 @@ const create = async (saleData, user) => {
       ? runUniversalPipeline(universalContext, universalRules)
       : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
-    // Merge resultados — pasar maxDiscountPct para que el cap aplique a ambos motores.
+    // Post-procesar resultado del motor universal — pasar maxDiscountPct para
+    // que el cap aplique correctamente.
     // NOTA (límite de alcance de esta unidad): `discountService.mergeEngineResults` es
     // código de Fase 7 (discountEngine Decimal), todavía NO migrado — sigue esperando
     // un `number` nativo y hace su propia aritmética con `* - Math.min/max` sobre
@@ -277,11 +290,18 @@ const create = async (saleData, user) => {
     // que el export a Excel (boundary ring): servicios Decimal de punta a punta,
     // conversión explícita solo al cruzar a código aún no migrado.
     const discountResult = discountService.mergeEngineResults(
-      legacyResult, universalResult, toNumber(originalTotal), allRules,
+      universalResult, toNumber(originalTotal), allRules,
       store?.maxDiscountPct ?? 80,
       preferredRuleIds,
       excludedRuleIds
     );
+
+    if (legacyRules.length > 0) {
+      discountResult.warnings = [
+        ...(discountResult.warnings ?? []),
+        `${legacyRules.length} regla(s) de descuento con engineVersion legacy fueron ignoradas (motor legacy retirado; ejecutar backfill de datos).`,
+      ];
+    }
 
     // ── PASO 4: Manejo de LIMITED_STOCK — decremento atómico ─────
     // Se filtra aquí para decrementar SOLO los que realmente aplican.

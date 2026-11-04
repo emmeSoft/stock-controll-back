@@ -28,7 +28,7 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
-const { evaluateUniversal } = require('./evaluator');
+const { evaluateUniversal, validatePaymentBreakdownAmounts } = require('./evaluator');
 const {
   simulateMonetaryImpact,
   applyDiscount,
@@ -89,6 +89,11 @@ module.exports = {
 
   // Utilidades expuestas (para testing y debugging)
   evaluateUniversal,
+
+  // Validación de paymentBreakdown[].amount, compartida con salesServices.js
+  // (ver docstring en evaluator.js) para que corra de forma incondicional
+  // en el flujo real de venta, no solo dentro de validateTicketConditions.
+  validatePaymentBreakdownAmounts,
 
   // Funciones del calculator
   simulateMonetaryImpact,

@@ -41,7 +41,44 @@ const {
   resolveOrderDiscounts,
   GUARD_MIN_PRICE,
 } = require('./calculator');
-const { money, toNumber, sum, D } = require('../../../utils/money');
+const { money, toNumber, sum, D, isPositiveAmount } = require('../../../utils/money');
+
+/**
+ * Valida que cada entrada de `paymentBreakdown` tenga un `amount` numérico,
+ * finito y positivo ANTES de usarlo en aritmética Decimal (`money()`/`sum()`).
+ *
+ * Sin este check, un payload malformado (`amount: 'abc'` o ausente) llega
+ * directo a `money()` y revienta con un error no controlado.
+ *
+ * IMPORTANTE: este check SOLO corre, en este archivo, cuando hay una regla
+ * ORDER_LEVEL activa con `ticketConditions.paymentMethods` seteado (rama
+ * proporcional de `validateTicketConditions` más abajo) — es decir, el caso
+ * RARO. Para el caso común (una venta sin ninguna regla de ese tipo activa,
+ * que es la mayoría), este call site nunca corre.
+ *
+ * Por eso `salesServices.create()` (el flujo real de venta) importa y llama
+ * esta misma función de forma INCONDICIONAL, apenas llega `paymentBreakdown`
+ * al body — antes de `validatePayments()` y de los cálculos de `ccAmount`/
+ * `nonCCTotal`, que hacen la misma aritmética Decimal sin ningún guard propio.
+ * Se exporta desde este módulo (en vez de duplicarla) para que ambos call
+ * sites compartan exactamente la misma semántica de validación.
+ *
+ * @param {Object[]} paymentBreakdown - [{ method, amount }]
+ * @throws {Error} 400 INVALID_PAYMENT_AMOUNT si algún `amount` no es un
+ *                 número finito y positivo.
+ */
+function validatePaymentBreakdownAmounts(paymentBreakdown) {
+  for (const p of paymentBreakdown) {
+    if (!isPositiveAmount(p?.amount)) {
+      throw Object.assign(
+        new Error(
+          `El monto de pago para el método '${p?.method ?? 'desconocido'}' debe ser un número positivo y finito.`
+        ),
+        { status: 400, code: 'INVALID_PAYMENT_AMOUNT' }
+      );
+    }
+  }
+}
 
 /**
  * Filtra reglas por vigencia temporal.
@@ -113,17 +150,54 @@ function validateTicketConditions(ticketConditions, context, rule = {}) {
       // En modo binario, asumimos impacto total si coincide
       rule._matchingAmount = context.orderSubtotal;
     } else {
-      // Cálculo preciso: cuánta plata entra por los medios válidos.
-      // Los montos del breakdown son los importes EXPLÍCITOS ingresados por el usuario.
-      // El modo no-split siempre manda productsTotal (ver DiscountSummaryModal),
-      // por lo que no hay riesgo de referencia circular.
-      // Usamos baseAmount (el valor BRUTO que ese pago representa) cuando existe.
-      // Esto evita la referencia circular: si el front envía el neto como amount,
-      // el descuento se calcularía sobre el neto y el resultado nunca cerraría.
-      // baseAmount es retrocompatible: si no viene, cae a amount (comportamiento anterior).
+      // Cálculo preciso: qué proporción de `context.orderSubtotal` (el
+      // subtotal vigente en este call site — ver nota más abajo sobre por
+      // qué NO es necesariamente el bruto pre-descuento) corresponde a los
+      // medios de pago válidos para esta regla.
+      //
+      // SEGURIDAD: antes se confiaba en `p.baseAmount`, un campo que el
+      // FRONTEND (DiscountSummaryModal.jsx) calculaba para decirle al
+      // backend qué proporción BRUTA representaba cada pago. Eso viola la
+      // regla de este proyecto de que ningún monto usado para calcular
+      // descuentos puede venir calculado por el cliente (ver cabecera de
+      // salesServices.js: "Nunca se confía en precios ni totales
+      // provenientes del frontend").
+      //
+      // Fix: el backend deriva la proporción él mismo con datos que ya
+      // conoce y valida, sin depender de ningún campo extra del cliente:
+      //   - context.orderSubtotal: en este call site (ticketConditions de
+      //     reglas ORDER, invocado desde evaluateUniversal vía
+      //     filterOrderRulesByTicketConditions) este valor NO es el
+      //     subtotal bruto original — es `residualSubtotal`, el subtotal
+      //     que queda DESPUÉS de aplicar los descuentos ITEM
+      //     (evaluateUniversal hace `{ ...context, orderSubtotal:
+      //     residualSubtotal }` antes de llegar acá). Sigue siendo un
+      //     valor calculado por el backend desde precios de DB, nunca del
+      //     cliente — pero no asumir que es el total bruto pre-descuento.
+      //   - p.amount: el monto que el vendedor efectivamente ingresó para
+      //     ese medio de pago — dato operativo real (cuánta plata entra
+      //     por esa vía), no un precio "calculado"; ya se valida contra
+      //     el total en salesServices.validatePayments.
+      //
+      // proporción_método = amount_método / totalPagado
+      // montoCorrespondiente_método = proporción_método × orderSubtotal
+      //
+      // Como efecto colateral, esta fórmula no usa en ningún momento el
+      // nombre/identidad de la regla — a diferencia del baseAmount
+      // calculado en el front, que (según el bug reportado) podía
+      // desincronizarse si se renombraba una regla. Al no depender de eso,
+      // renombrar una regla ya no puede alterar este cálculo.
+      // Validar la forma de cada entrada ANTES de cualquier aritmética Decimal
+      // (ver docstring de validatePaymentBreakdownAmounts arriba).
+      validatePaymentBreakdownAmounts(context.paymentBreakdown);
+
+      const totalPaid = toNumber(sum(context.paymentBreakdown, (p) => p.amount));
+
+      if (totalPaid <= 0) return false;
+
       const matchingAmount = toNumber(sum(
         context.paymentBreakdown.filter(p => paymentMethods.includes(p.method)),
-        (p) => p.baseAmount ?? p.amount
+        (p) => money(p.amount).dividedBy(totalPaid).times(context.orderSubtotal)
       ));
 
       if (matchingAmount <= 0) return false;
@@ -313,4 +387,5 @@ module.exports = {
   validateTicketConditions,
   filterOrderRulesByTicketConditions,
   evaluateUniversal,
+  validatePaymentBreakdownAmounts,
 };
