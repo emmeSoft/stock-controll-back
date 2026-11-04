@@ -25,23 +25,30 @@ const { money, round, toNumber, sum, D } = require('../utils/money');
 
 /**
  * Tolerancia de redondeo para comparaciones de pago: max($0.01, 0.1% del
- * monto), pero nunca más de $0.05.
+ * monto), pero nunca más de $0.50.
  *
  * El piso de $0.01 y el 0.1% proporcional se mantienen sin cambios — son los
  * únicos responsables de que montos chicos (ej. total $0.05) no queden con
- * una tolerancia que vuelva el chequeo vacío. El techo de $0.05 es el único
- * cambio real: antes la tolerancia crecía sin límite con el monto (una venta
- * de $120.000 toleraba hasta $120 de diferencia), lo que era un hueco real de
- * integridad de plata, no una concesión a redondeo legítimo — todo este
- * código ya usa Decimal exacto (ver money-stock-integrity), así que no hay
- * acumulación de error de punto flotante que justifique que la tolerancia
- * escale indefinidamente.
+ * una tolerancia que vuelva el chequeo vacío. El techo es el único cambio
+ * real: antes la tolerancia crecía sin límite con el monto (una venta de
+ * $120.000 toleraba hasta $120 de diferencia), un hueco real de integridad
+ * de plata.
+ *
+ * El techo NO es $0.01 ni queda sin techo: `discountService.mergeEngineResults`
+ * (ver nota en salesServices.js `create()`, sección post-motor-universal) hace
+ * su aritmética de cascada con `number` nativo todavía, redondeando a centavos
+ * en CADA paso de la cascada de descuentos ORDER (vía `toNumber()`, que
+ * siempre redondea — ver utils/money.js). En un carrito grande con muchas
+ * líneas/reglas en cascada, ese arrastre legítimo de redondeo puede superar
+ * unos pocos centavos. $0.50 es el propio ejemplo que cita el comentario
+ * original de este archivo para ese escenario — cierra el hueco grande (240x
+ * más ajustado que antes) sin arriesgar falsos rechazos de ventas correctas.
  *
  * @param {Decimal|number} total — monto de referencia (ej. total de la venta)
  * @returns {Decimal}
  */
 function paymentTolerance(total) {
-  return D.min(money(0.05), D.max(money(0.01), money(total).times(0.001)));
+  return D.min(money(0.5), D.max(money(0.01), money(total).times(0.001)));
 }
 
 /**
