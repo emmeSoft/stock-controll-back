@@ -33,6 +33,7 @@ const tests = [
   './concurrency/caja-open-race.test.js',
   './integrity/caja-open-index.test.js',
   './discountEngine/engine-version-forced-universal.test.js',
+  './discountEngine/max-units-rule-selection.test.js',
   './discountEngine/payment-breakdown-proportion.test.js',
   './discountEngine/payment-breakdown-amount-validation.test.js',
   './scenarios/sale-create-invalid-payment-amount.test.js',
