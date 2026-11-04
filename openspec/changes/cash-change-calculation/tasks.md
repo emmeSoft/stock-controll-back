@@ -41,12 +41,12 @@ Chain strategy: pending
 
 ## Phase 2: Unit B — Validation, Change Math, Persistence
 
-- [ ] 2.1 `services/salesServices.js`: add `const isCashMethod = (method) => String(method ?? '').trim().toLowerCase() === 'efectivo'` beside `validatePayments`. Do NOT add `"Efectivo"` to the existing `"Cuenta Corriente"` normalization block (design Decision 2 — would split historical ticket spellings for no gain).
-- [ ] 2.2 Add `validateCashReceivedShape(paymentBreakdown)`, called pre-transaction right after the normalization block (~`:113`): non-cash legs skipped; cash leg with `!isPositiveAmount(receivedAmount)` → `400 { code: 'CASH_RECEIVED_REQUIRED' }`.
-- [ ] 2.3 Inside the transaction, immediately after `validatePayments`/non-CC branch (~`:366-382`): per cash leg, `received.lt(legAmount)` → `400 { code: 'CASH_RECEIVED_INSUFFICIENT' }` naming both figures, zero tolerance; else `leg._changeAmount = round(received.minus(legAmount))`.
-- [ ] 2.4 PASO 8 (`orderPayment.create`, ~`:422-431`): persist `amount` NET unchanged; `receivedAmount`/`changeAmount` = computed values for cash legs, `null` for non-cash (even if a `receivedAmount` was sent — ignored silently, never persisted).
-- [ ] 2.5 Response (~`:570-586`): add `change: totalChange` (sum of per-leg `_changeAmount`); enrich returned `orderPayments` with `receivedAmount`/`changeAmount` for cash legs, strip internal `_changeAmount`.
-- [ ] 2.6 Confirm `Σ paymentBreakdown.amount === order.amount` still holds regardless of overpayment (no code change expected — assert in Unit D).
+- [x] 2.1 `services/salesServices.js`: add `const isCashMethod = (method) => String(method ?? '').trim().toLowerCase() === 'efectivo'` beside `validatePayments`. Do NOT add `"Efectivo"` to the existing `"Cuenta Corriente"` normalization block (design Decision 2 — would split historical ticket spellings for no gain).
+- [x] 2.2 Add `validateCashReceivedShape(paymentBreakdown)`, called pre-transaction right after the normalization block (~`:113`): non-cash legs skipped; cash leg with `!isPositiveAmount(receivedAmount)` → `400 { code: 'CASH_RECEIVED_REQUIRED' }`.
+- [x] 2.3 Inside the transaction, immediately after `validatePayments`/non-CC branch (~`:366-382`): per cash leg, `received.lt(legAmount)` → `400 { code: 'CASH_RECEIVED_INSUFFICIENT' }` naming both figures, zero tolerance; else `leg._changeAmount = round(received.minus(legAmount))`.
+- [x] 2.4 PASO 8 (`orderPayment.create`, ~`:422-431`): persist `amount` NET unchanged; `receivedAmount`/`changeAmount` = computed values for cash legs, `null` for non-cash (even if a `receivedAmount` was sent — ignored silently, never persisted).
+- [x] 2.5 Response (~`:570-586`): add `change: totalChange` (sum of per-leg `_changeAmount`); enrich returned `orderPayments` with `receivedAmount`/`changeAmount` for cash legs, strip internal `_changeAmount`.
+- [x] 2.6 Confirm `Σ paymentBreakdown.amount === order.amount` still holds regardless of overpayment (no code change expected — assert in Unit D).
 
 ## Phase 3: Unit C — Reporting + Excel Export
 
