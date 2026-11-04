@@ -291,12 +291,14 @@ model StockHistory {
 }
 
 model OrderPayment {
-  id            String   @id @default(cuid())
-  orderId       String
-  paymentMethod String
-  amount        Decimal  @db.Decimal(12, 2)
-  createdAt     DateTime @default(now())
-  order         order    @relation(fields: [orderId], references: [id])
+  id             String   @id @default(cuid())
+  orderId        String
+  paymentMethod  String
+  amount         Decimal  @db.Decimal(12, 2)
+  receivedAmount Decimal? @db.Decimal(12, 2)
+  changeAmount   Decimal? @db.Decimal(12, 2)
+  createdAt      DateTime @default(now())
+  order          order    @relation(fields: [orderId], references: [id])
 }
 
 // ============================================
