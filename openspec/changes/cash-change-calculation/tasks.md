@@ -50,11 +50,11 @@ Chain strategy: pending
 
 ## Phase 3: Unit C — Reporting + Excel Export
 
-- [ ] 3.1 `services/cajaServices.js` `getAllRegisters` (~`:327`): add `totals.vueltosEntregados` from `reg.orders` (already filtered non-cancelled) — comment that no extra filter is needed.
-- [ ] 3.2 `services/cajaServices.js` `getRegisterHistory` (~`:254`): change return shape to `{ items, totals: { vueltosEntregados } }`; `vueltosEntregados` applies its OWN explicit non-cancelled filter (`orders` here deliberately includes CANCELLED for audit — do not inherit that default for the money aggregate).
-- [ ] 3.3 **Cross-repo coupling — do not merge/deploy ahead of Unit F's 6.4**: this is a breaking contract change for `GET /api/caja/history`'s one known consumer, `CashRegister.jsx:126`. Verify 6.4 against this shape change before either side's PR is considered mergeable.
-- [ ] 3.4 `controllers/cajaController.js` `exportRegisters`: add `vueltos: toNumber(t.vueltosEntregados)` data cell + matching Excel column header; `fisicoExpected` untouched.
-- [ ] 3.5 Confirm `closeRegister` (~`:159-196`) formula is untouched — no code change here; asserted by Unit D's new integrity test, not by inspection alone.
+- [x] 3.1 `services/cajaServices.js` `getAllRegisters` (~`:327`): add `totals.vueltosEntregados` from `reg.orders` (already filtered non-cancelled) — comment that no extra filter is needed.
+- [x] 3.2 `services/cajaServices.js` `getRegisterHistory` (~`:254`): change return shape to `{ items, totals: { vueltosEntregados } }`; `vueltosEntregados` applies its OWN explicit non-cancelled filter (`orders` here deliberately includes CANCELLED for audit — do not inherit that default for the money aggregate).
+- [x] 3.3 **Cross-repo coupling — do not merge/deploy ahead of Unit F's 6.4**: this is a breaking contract change for `GET /api/caja/history`'s one known consumer, `CashRegister.jsx:126`. Verify 6.4 against this shape change before either side's PR is considered mergeable. (Code side implemented in this unit; the cross-repo pairing verification against Unit F's 6.4 itself cannot be completed until Unit F exists — see apply report flag.)
+- [x] 3.4 `controllers/cajaController.js` `exportRegisters`: add `vueltos: toNumber(t.vueltosEntregados)` data cell + matching Excel column header; `fisicoExpected` untouched.
+- [x] 3.5 Confirm `closeRegister` (~`:159-196`) formula is untouched — no code change here; asserted by Unit D's new integrity test, not by inspection alone.
 
 ## Phase 4: Unit D — Tests (New Files + Regression Fixtures)
 
