@@ -24,6 +24,45 @@ const { money, round, toNumber, sum, D } = require('../utils/money');
 // ─────────────────────────────────────────────────────────────────
 
 /**
+ * Tolerancia de redondeo para comparaciones de pago: max($0.01, 0.1% del
+ * monto), pero nunca más de $0.50. El piso de $0.01 y el 0.1% proporcional
+ * evitan que montos chicos (ej. total $0.05) queden con una tolerancia que
+ * vuelva el chequeo vacío. El techo es lo que cambió recién: antes la
+ * tolerancia crecía sin límite con el monto (una venta de $120.000 toleraba
+ * hasta $120 de diferencia), un hueco real de integridad de plata.
+ *
+ * ¿Por qué $0.50 de techo y no algo más chico? Esta misma función se usa en
+ * 2 lugares con razones distintas para necesitar margen:
+ * con razones distintas para necesitar margen:
+ *  1. `validatePayments` (pago vs. total con descuentos ya aplicados):
+ *     `discountService.mergeEngineResults` (ver nota en `create()`, sección
+ *     post-motor-universal) todavía hace su aritmética de cascada con `number`
+ *     nativo, redondeando a centavos en CADA paso de la cascada de descuentos
+ *     ORDER (vía `toNumber()`, que siempre redondea — ver utils/money.js). En
+ *     un carrito grande con muchas líneas/reglas en cascada, ese arrastre
+ *     legítimo puede superar unos pocos centavos — $0.50 es el propio ejemplo
+ *     que cita el comentario original de este archivo para ese escenario.
+ *  2. `priceIntegrityTolerance` (subtotal SIN descuentos, frontend vs. DB):
+ *     no hay cascada de descuentos acá, así que no hace falta ese margen —
+ *     pero $0.50 sigue siendo chico de sobra para seguir detectando una
+ *     sesión con precios desactualizados (un cambio de precio real casi
+ *     siempre mueve el subtotal mucho más que 50 centavos).
+ * Si algún día hace falta ajustar el margen de la cascada de descuentos (razón
+ * 1) sin tocar la detección de desincronización de precios (razón 2), separar
+ * esta función en dos en vez de subir este valor compartido.
+ *
+ * El piso de $0.01 y el 0.1% proporcional aplican igual en ambos casos — son
+ * los responsables de que montos chicos (ej. total $0.05) no queden con una
+ * tolerancia que vuelva el chequeo vacío.
+ *
+ * @param {Decimal|number} total — monto de referencia (ej. total de la venta)
+ * @returns {Decimal}
+ */
+function paymentTolerance(total) {
+  return D.min(money(0.5), D.max(money(0.01), money(total).times(0.001)));
+}
+
+/**
  * Valida que paymentBreakdown existe, no está vacío
  * y que la suma declarada coincide con el total calculado en backend.
  *
@@ -37,12 +76,7 @@ function validatePayments(paymentBreakdown, computedTotal) {
   const totalPaid = sum(paymentBreakdown, (p) => p.amount);
   const total = money(computedTotal);
 
-  // Tolerancia dinámica: max($0.01, 0.1% del total calculado).
-  // Justificación: punto flotante acumula errores proporcionales al monto.
-  // Una venta de $100.000 puede diferir $0.50 por redondeo legítimo de múltiples
-  // descuentos; rechazarla por $0.01 sería un falso negativo.
-  // El 0.1% sigue siendo lo suficientemente estricto para detectar manipulaciones reales.
-  const tolerance = D.max(money(0.01), total.times(0.001));
+  const tolerance = paymentTolerance(total);
 
   // SEGURIDAD: Solo validamos que el total pagado sea SUFICIENTE para cubrir el total calculado.
   // Si el cliente paga de más, se asume que es vuelto o excedente contable. (SC-3.4)
@@ -224,7 +258,7 @@ const create = async (saleData, user) => {
     // ── PASO 2.5: Validar integridad de precios base (Anti-Desincronización) ──
     // El frontend envía `amount` = subtotal SIN descuentos (lo que ve el vendedor/comprador).
     // El backend recalcula ese mismo subtotal desde DB y los compara ANTES de cualquier
-    // cálculo de descuentos. Si difieren más del 0.1%, la sesión está desactualizada.
+    // cálculo de descuentos. Si difieren más de la tolerancia, la sesión está desactualizada.
     //
     // SEGURIDAD: este valor NUNCA se usa para calcular descuentos ni el total a cobrar.
     // Su único propósito es detectar desincronización de pantalla.
@@ -232,7 +266,7 @@ const create = async (saleData, user) => {
       throw new Error('El campo `amount` (subtotal sin descuentos) es obligatorio para registrar una venta.');
     }
     const backendBaseSubtotal = sum(cartItems, (i) => money(i.unitPrice).times(i.quantity));
-    const priceIntegrityTolerance = D.max(money(0.01), backendBaseSubtotal.times(0.001));
+    const priceIntegrityTolerance = paymentTolerance(backendBaseSubtotal);
     const priceIntegrityDiff = money(frontendSubtotal).minus(backendBaseSubtotal).abs();
     if (priceIntegrityDiff.gt(priceIntegrityTolerance)) {
       throw new Error(
@@ -391,7 +425,7 @@ const create = async (saleData, user) => {
       const nonCCPayments = paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE');
       const nonCCTotal = sum(nonCCPayments, (p) => p.amount);
 
-      const tolerance = D.max(money(0.01), money(cashPaid).times(0.001));
+      const tolerance = paymentTolerance(cashPaid);
 
       if (nonCCTotal.lt(money(cashPaid).minus(tolerance))) {
         throw new Error(
@@ -827,6 +861,6 @@ const cancel = async (orderId, password, user) => {
   });
 };
 
-module.exports = { create, getAll, getById, cancel };
+module.exports = { create, getAll, getById, cancel, validatePayments };
 
 // REFRESH: Forzando reinicio para asegurar carga de validación flexible (SC-3.4)
