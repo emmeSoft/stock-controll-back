@@ -11,7 +11,7 @@
  */
 
 const prisma = require('../db/database.prisma.js');
-const { validateConditions, getLayer, DEFAULT_PRIORITIES, runPipeline } = require('./discountEngine');
+const { getLayer, DEFAULT_PRIORITIES } = require('./discountEngine');
 const { runUniversalPipeline } = require('./discountEngine/universal');
 const { validateConditionsDual } = require('./discountEngine/validators');
 const { money, round, toNumber, sum } = require('../utils/money');
@@ -42,8 +42,18 @@ async function validatePercentageAgainstCap(storeId, percentage) {
 
 /**
  * Separa reglas activas en dos listas según su engineVersion.
- * Las reglas sin engineVersion o con engineVersion=null caen como legacy
- * para garantizar backward-compatibility (AXIOM-3).
+ *
+ * NOTA (motor legacy retirado): el único motor de descuentos que existe
+ * hoy es el universal (`runUniversalPipeline`) — no hay implementación
+ * legacy en este código base. `engineVersion` se fuerza a 'universal'
+ * server-side para toda regla creada o editada (ver `sanitizeRuleInput`),
+ * y una migración de datos normaliza las filas existentes con
+ * 'legacy'/null. En runtime estable `legacyRules` debería estar siempre
+ * vacío; esta función se mantiene como separación defensiva para que
+ * cualquier fila que aún no haya pasado por esa normalización no se
+ * ejecute por error contra el motor universal (ver call sites en
+ * `preview()` y `salesServices.js`, que ignoran `legacyRules` en vez de
+ * pasarlas a ningún pipeline).
  *
  * @param {Object[]} rules — reglas activas de la tienda
  * @returns {{ legacyRules: Object[], universalRules: Object[] }}
@@ -56,7 +66,7 @@ function splitRulesByEngine(rules) {
     if (rule.engineVersion === 'universal') {
       universalRules.push(rule);
     } else {
-      // null, undefined, 'legacy' → motor legacy (backward-compatible)
+      // null, undefined, 'legacy' → no normalizada aún; ver nota arriba
       legacyRules.push(rule);
     }
   }
@@ -65,20 +75,19 @@ function splitRulesByEngine(rules) {
 }
 
 /**
- * Combina los resultados de ambos motores en una respuesta unificada.
+ * Procesa el resultado del motor universal en una respuesta unificada.
  * Contrato backward-compatible: los campos top-level no cambian de nombre/tipo.
+ * (Históricamente combinaba legacy + universal; el motor legacy fue retirado
+ * — no existía ninguna implementación real detrás de él — así que esta
+ * función ahora solo post-procesa el resultado universal: cap de tienda,
+ * blindaje nominal, recalculación de montos, etc.)
  *
- * @param {Object} legacyResult  — resultado de runPipeline (puede ser vacío)
  * @param {Object} universalResult — resultado de runUniversalPipeline (puede ser vacío)
  * @param {number} originalTotal — subtotal calculado desde los items del carrito
  * @param {Object[]} [allRules] — reglas originales para obtener nombres (opcional)
  * @returns {Object} respuesta unificada
  */
-function mergeEngineResults(legacyResult, universalResult, originalTotal, allRules = [], maxDiscountPct = 80, preferredRuleIds = [], excludedRuleIds = []) {
-  const legacyDiscountTotal = legacyResult?.discountTotal ?? 0;
-  const universalDiscountTotal = universalResult?.discountTotal ?? 0;
-  const rawDiscountTotal = toNumber(money(legacyDiscountTotal).plus(universalDiscountTotal));
-
+function mergeEngineResults(universalResult, originalTotal, allRules = [], maxDiscountPct = 80, preferredRuleIds = [], excludedRuleIds = []) {
   // ── Aplicar tope de descuento de la tienda ──────────────────────
   const maxAllowedDiscount = toNumber(money(originalTotal).times(maxDiscountPct).dividedBy(100));
 
@@ -101,10 +110,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
   };
 
   // Etiquetar cada applied discount con su motor de origen y nombre
-  const combinedApplied = [
-    ...(legacyResult?.appliedDiscounts ?? []).map(enrichDiscount),
-    ...(universalResult?.appliedDiscounts ?? []).map(enrichDiscount),
-  ];
+  const combinedApplied = (universalResult?.appliedDiscounts ?? []).map(enrichDiscount);
 
   // ── Blindaje Quirúrgico por Ignorado Estricto (Sin Recortes) ──
   // PRIORIDAD: Preferred (User) > ITEM > ORDER > Priority (DESC) > Name (ASC)
@@ -221,10 +227,7 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
     };
   });
 
-  const warnings = [
-    ...(legacyResult?.warnings ?? []),
-    ...(universalResult?.warnings ?? []),
-  ];
+  const warnings = [...(universalResult?.warnings ?? [])];
 
   return {
     originalTotal,
@@ -236,18 +239,22 @@ function mergeEngineResults(legacyResult, universalResult, originalTotal, allRul
     maxDiscountPct,
     maxDiscountAmount: maxAllowedDiscount,
     items: survivorItems,
-    conditionalDiscounts: [
-      ...(legacyResult?.conditionalDiscounts ?? []),
-      ...(universalResult?.conditionalDiscounts ?? []),
-    ],
+    conditionalDiscounts: [...(universalResult?.conditionalDiscounts ?? [])],
     warnings,
   };
 }
 
 /**
  * Extrae solo los campos permitidos del body para crear/editar una regla.
- * Acepta tanto el formato legacy como el universal.
  * Nunca acepta `layer`, `usedUnits`, `createdBy` del cliente.
+ *
+ * SEGURIDAD: `engineVersion` se fuerza SIEMPRE a 'universal' server-side,
+ * sin importar lo que envíe el cliente (mismo principio de "no confiar en
+ * el cliente para nada que afecte la plata" ya aplicado a `layer`). No
+ * existe ningún motor legacy real en este código base — aceptar cualquier
+ * otro valor acá terminaba creando reglas que `runUniversalPipeline`
+ * filtra y nunca ejecuta (descuento $0 silencioso). `type`/`conditions`
+ * se mantienen en el modelo solo por compatibilidad histórica de datos.
  */
 function sanitizeRuleInput(body) {
   const {
@@ -256,7 +263,6 @@ function sanitizeRuleInput(body) {
     startsAt, endsAt,
     conditions,
     conditionsUniversal,
-    engineVersion,
     priority,
     isCombinable,
     allowPartial,
@@ -271,7 +277,7 @@ function sanitizeRuleInput(body) {
     endsAt: endsAt ? new Date(endsAt) : null,
     conditions: conditions ?? null,
     conditionsUniversal: conditionsUniversal ?? null,
-    engineVersion: engineVersion ?? 'legacy',
+    engineVersion: 'universal', // forzado server-side — ver nota arriba
     priority: priority ?? DEFAULT_PRIORITIES[type] ?? 0,
     isCombinable: isCombinable ?? true,
     allowPartial: allowPartial ?? false,
@@ -282,32 +288,28 @@ function sanitizeRuleInput(body) {
 
 /**
  * Valida un body de regla y lanza si hay errores.
- * Soporta tanto el formato legacy como el universal (SC-2.4).
+ *
+ * Toda regla se valida y persiste como universal (ver `sanitizeRuleInput`,
+ * que fuerza `engineVersion: 'universal'` server-side sin importar lo que
+ * mande el cliente). Por eso esta validación ignora cualquier
+ * `engineVersion` del body y exige siempre `conditionsUniversal` — si en
+ * cambio ramificara según el `engineVersion` que mandó el cliente,
+ * aceptaría payloads con forma legacy (`type` + `conditions`, sin
+ * `conditionsUniversal`) que luego se guardan como 'universal' sin
+ * condiciones reales, resultando en una regla que el motor jamás ejecuta.
+ *
  * @throws {Error}
  */
-function validateRuleBody({ type, percentage, conditions, conditionsUniversal, engineVersion }) {
+function validateRuleBody({ percentage, conditionsUniversal }) {
   if (typeof percentage !== 'number' || percentage <= 0 || percentage >= 100) {
     throw new Error('`percentage` debe ser un número entre 0.01 y 99.99.');
   }
 
-  const version = engineVersion ?? 'legacy';
-
-  if (version === 'universal') {
-    // Reglas universales: conditionsUniversal requerido, type opcional
-    if (!conditionsUniversal || typeof conditionsUniversal !== 'object') {
-      throw new Error('`conditionsUniversal` debe ser un objeto para reglas universales.');
-    }
-    const condError = validateConditionsDual(conditionsUniversal, 'universal');
-    if (condError) throw new Error(`conditionsUniversal inválidas: ${condError}`);
-  } else {
-    // Reglas legacy: type y conditions requeridos
-    if (!type) throw new Error('El campo `type` es obligatorio para reglas legacy.');
-    if (!conditions || typeof conditions !== 'object') {
-      throw new Error('`conditions` debe ser un objeto para reglas legacy.');
-    }
-    const condError = validateConditionsDual(conditions, 'legacy', type);
-    if (condError) throw new Error(`Conditions inválidas para tipo ${type}: ${condError}`);
+  if (!conditionsUniversal || typeof conditionsUniversal !== 'object') {
+    throw new Error('`conditionsUniversal` debe ser un objeto para reglas universales.');
   }
+  const condError = validateConditionsDual(conditionsUniversal, 'universal');
+  if (condError) throw new Error(`conditionsUniversal inválidas: ${condError}`);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -485,14 +487,15 @@ const activate = async (id, user) => {
  * Calcula descuentos SIN persistir nada.
  * Usa exactamente el mismo motor que la venta real.
  *
- * @param {object} body — { items, clientId?, paymentMethods?, paymentBreakdown? }
+ * @param {object} body — { items, clientId?, paymentBreakdown? }
+ *   NOTA: `paymentMethods` NO se acepta como campo independiente del body —
+ *   se deriva siempre de `paymentBreakdown` (ver nota de seguridad abajo).
  * @param {object} user — usuario autenticado
  */
 const preview = async (storeId, body) => {
   const {
     items,
     clientId,
-    paymentMethods,
     paymentBreakdown,
     preferredRuleIds = [],
     excludedRuleIds = []
@@ -504,6 +507,17 @@ const preview = async (storeId, body) => {
       if (p.method === "Cuenta Corriente") p.method = "CUENTA_CORRIENTE";
     });
   }
+
+  // SEGURIDAD: `paymentMethods` se deriva SIEMPRE de `paymentBreakdown`, igual
+  // que en salesServices.create() — nunca se acepta como campo independiente
+  // del body. Antes, un cliente podía mandar `paymentMethods: ['CASH']` sin
+  // breakdown y forzar la rama binaria de `validateTicketConditions` (que
+  // asume el 100% del subtotal como coincidente), mostrando un descuento muy
+  // superior al que la venta real terminaría aplicando si el pago real
+  // resultaba dividido entre varios medios. Al derivar siempre del
+  // breakdown, preview() y la venta real quedan atadas a la misma rama
+  // proporcional bajo las mismas condiciones.
+  const paymentMethods = (paymentBreakdown ?? []).map(p => p.method);
 
   if (!items || !Array.isArray(items)) throw new Error("Items son requeridos.");
 
@@ -547,24 +561,24 @@ const preview = async (storeId, body) => {
 
   const { legacyRules, universalRules } = splitRulesByEngine(allRules);
 
-  // ── Ejecutar motor legacy (SC-2.2) ────────────────────────────
-  const legacyContext = {
-    storeId,
-    store: { maxDiscountPct: store?.maxDiscountPct ?? 80 },
-    clientId: clientId ?? null,
-    paymentMethods: paymentMethods ?? [],
-    items: cartItems,
-    rules: legacyRules,   // inyectadas directamente — no hay segundo fetch
-  };
-  const legacyResult = legacyRules.length > 0
-    ? await runPipeline(legacyContext)
-    : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
+  // Blindaje: en runtime estable `legacyRules` debería estar siempre vacío
+  // (ver nota en splitRulesByEngine — el motor legacy fue retirado, no hay
+  // implementación real detrás de él). Si aparece alguna, es porque esa fila
+  // todavía no pasó por la normalización de `engineVersion`; la ignoramos
+  // explícitamente en vez de ejecutarla contra el motor universal (eso
+  // producía un descuento $0 silencioso), pero lo señalamos para que no
+  // sea invisible.
+  if (legacyRules.length > 0) {
+    console.warn(
+      `[discountService.preview] ${legacyRules.length} regla(s) con engineVersion legacy/null ignoradas (motor legacy retirado). IDs: ${legacyRules.map(r => r.id).join(', ')}`
+    );
+  }
 
   // ── Ejecutar motor universal (SC-2.2) ─────────────────────────
   const universalContext = {
     storeId,
     clientId: clientId ?? null,
-    paymentMethods: paymentMethods ?? [],
+    paymentMethods, // derivado de paymentBreakdown — ver nota de seguridad arriba
     paymentBreakdown: paymentBreakdown ?? [],
     items: cartItems,
   };
@@ -572,9 +586,8 @@ const preview = async (storeId, body) => {
     ? runUniversalPipeline(universalContext, universalRules)
     : { discountTotal: 0, appliedDiscounts: [], conditionalDiscounts: [], warnings: [] };
 
-  // ── Merge de resultados (SC-2.3) ──────────────────────────────
-  return mergeEngineResults(
-    legacyResult,
+  // ── Post-procesar resultado del motor universal (SC-2.3) ──────
+  const result = mergeEngineResults(
     universalResult,
     originalTotal,
     allRules,
@@ -582,6 +595,15 @@ const preview = async (storeId, body) => {
     preferredRuleIds,
     excludedRuleIds // Pasamos las exclusiones al unificador
   );
+
+  if (legacyRules.length > 0) {
+    result.warnings = [
+      ...(result.warnings ?? []),
+      `${legacyRules.length} regla(s) de descuento con engineVersion legacy fueron ignoradas (motor legacy retirado; ejecutar backfill de datos).`,
+    ];
+  }
+
+  return result;
 };
 
 module.exports = { getAll, getById, create, update, deactivate, remove, activate, preview, splitRulesByEngine, mergeEngineResults };

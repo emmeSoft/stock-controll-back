@@ -22,7 +22,7 @@ const GUARD_MIN_PRICE = 0.01;
  */
 function simulateMonetaryImpact(rule, item) {
   const conditions = rule.conditionsUniversal ?? {};
-  const { target, itemConditions } = conditions;
+  const { target, itemConditions, constraints } = conditions;
 
   // Verificar si aplica a este item (target check)
   if (target) {
@@ -45,12 +45,32 @@ function simulateMonetaryImpact(rule, item) {
     return 0;
   }
 
+  // Respetar constraints.maxUnits para fines de SELECCIÓN de regla (qué regla
+  // "gana" cuando dos compiten por el mismo item). Sin esto, el impacto
+  // simulado asumía que el descuento cubría TODAS las unidades del item,
+  // aunque la regla tope a menos — lo que podía hacer ganar a una regla que
+  // en los hechos (ver applyDiscount) descontaría menos que la otra.
+  // NOTA: esto NO redistribuye el cap entre líneas del carrito (ver
+  // evaluator.js / applyDiscount) — ese es un issue separado, fuera de
+  // alcance acá.
+  const maxUnits = constraints?.maxUnits;
+  const discountableQuantity = (typeof maxUnits === 'number')
+    ? Math.min(item.quantity, maxUnits)
+    : item.quantity;
+
   // Calcular descuento (item.originalSubtotal puede no existir aún).
   // item.unitPrice puede ser un Prisma.Decimal real (viene de product.price) o
   // un number plano (tests) — money() soporta ambos.
-  const originalSubtotal = item.originalSubtotal ?? money(item.unitPrice).times(item.quantity);
+  // Si maxUnits no achica la cantidad descontable, se puede reusar
+  // item.originalSubtotal (ya calculado para la cantidad completa) como
+  // antes. Si la achica, hay que recalcular la base sobre las unidades
+  // efectivamente descontables.
+  const baseSubtotal = (discountableQuantity === item.quantity)
+    ? (item.originalSubtotal ?? money(item.unitPrice).times(item.quantity))
+    : money(item.unitPrice).times(discountableQuantity);
+
   const percentage = rule.percentage ?? 0;
-  const discountAmount = money(originalSubtotal).times(percentage).dividedBy(100);
+  const discountAmount = money(baseSubtotal).times(percentage).dividedBy(100);
 
   return toNumber(discountAmount);
 }
