@@ -2,7 +2,7 @@
 
 ## Pre-Apply Step (mandatory, before Unit A)
 
-- [ ] 0.1 Rebase/update `sdd/cash-change-calculation-proposal` from `main`. Design confirmed the sibling `$0.50` tolerance cap (PR #35) is **NOT yet merged to `main`** as of 2026-11-04 — `salesServices.js:46,374,222` still has the uncapped `0.1%` formula on this branch. Do not re-derive or work around the uncapped formula; just update from `main` so Units B/D build on real current state. If PR #35 still isn't merged after rebase, proceed anyway — this change's `receivedAmount` check is zero-tolerance and self-contained, independent of that cap (Open Question #1).
+- [x] 0.1 Rebase/update `sdd/cash-change-calculation-proposal` from `main`. Design confirmed the sibling `$0.50` tolerance cap (PR #35) is **NOT yet merged to `main`** as of 2026-11-04 — `salesServices.js:46,374,222` still has the uncapped `0.1%` formula on this branch. Do not re-derive or work around the uncapped formula; just update from `main` so Units B/D build on real current state. If PR #35 still isn't merged after rebase, proceed anyway — this change's `receivedAmount` check is zero-tolerance and self-contained, independent of that cap (Open Question #1).
 
 ## Review Workload Forecast
 
