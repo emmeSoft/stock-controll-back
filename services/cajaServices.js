@@ -251,14 +251,34 @@ const getCurrentRegister = async (user) => {
     return openRegister; // Puede ser null si no hay caja abierta
 };
 
+/**
+ * Suma `changeAmount` (vuelto entregado) a través de todas las `orderPayments`
+ * de un set de órdenes. `changeAmount` sólo se persiste en legs de efectivo
+ * (ver Unit B, PASO 8) — es `null` para legs no-efectivo — así que filtrar
+ * por `changeAmount != null` ya restringe la suma a los pagos en efectivo,
+ * sin necesidad de re-chequear el método de pago.
+ *
+ * El caller es responsable de decidir qué órdenes entran (cancelled o no);
+ * esta función no aplica ningún filtro de status por sí misma.
+ *
+ * @param {Array} orders — órdenes con `orderPayments` incluido
+ * @returns {Decimal} vuelto total entregado, redondeado a 2 decimales
+ */
+const computeVueltosEntregados = (orders) =>
+    round(
+        sum(orders, (order) =>
+            sum((order.orderPayments || []).filter(p => p.changeAmount != null), p => p.changeAmount)
+        )
+    );
+
 const getRegisterHistory = async (user) => {
     const register = await getCurrentRegister(user);
     if (!register) throw new Error("No hay caja abierta para mostrar el historial del turno.");
 
     const orders = await prisma.order.findMany({
         where: { cashRegisterId: register.id },
-        include: { 
-            user: true, 
+        include: {
+            user: true,
             client: true,
             orderDetails: {
                 include: { product: true }
@@ -279,7 +299,14 @@ const getRegisterHistory = async (user) => {
         ...movements.map(m => ({ ...m, _typeModel: 'MOVEMENT', date: m.createdAt }))
     ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    return unified;
+    // `orders` arriba incluye CANCELLED a propósito (auditoría, ver nota
+    // sobre la query). El agregado monetario de "vueltos entregados" NO debe
+    // heredar ese default: una venta cancelada con sobrepago no puede sumar
+    // al arqueo del turno. Filtro propio y explícito, independiente de `items`.
+    const nonCancelledOrders = orders.filter(o => o.status !== 'CANCELLED');
+    const vueltosEntregados = computeVueltosEntregados(nonCancelledOrders);
+
+    return { items: unified, totals: { vueltosEntregados } };
 };
 
 const getGlobalHistory = async (user, query = {}) => {
@@ -382,6 +409,9 @@ const getAllRegisters = async (user, query = {}) => {
 
         const totalIncome = sum(reg.cashMovements.filter(m => m.type === 'INCOME'), m => m.amount);
         const totalExpense = sum(reg.cashMovements.filter(m => m.type === 'EXPENSE'), m => m.amount);
+        // `reg.orders` ya viene filtrado a no-CANCELLED por el `where` del
+        // include arriba — no se necesita (ni se aplica) un filtro extra acá.
+        const vueltosEntregados = computeVueltosEntregados(reg.orders);
 
         return {
             ...reg,
@@ -391,7 +421,8 @@ const getAllRegisters = async (user, query = {}) => {
                 ventasTarjeta: totalTarjeta,
                 ventasCuentaCorriente: totalCuentaCorriente,
                 ingresosManuales: totalIncome,
-                retirosManuales: totalExpense
+                retirosManuales: totalExpense,
+                vueltosEntregados
             }
         };
     });
