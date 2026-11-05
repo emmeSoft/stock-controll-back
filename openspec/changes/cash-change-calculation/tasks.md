@@ -62,16 +62,18 @@ Chain strategy: pending
 - [x] 4.2 Write `tests/integrity/caja-expected-with-change.test.js`: shift of N overpaid cash sales → `expectedAmount === opening + Σ net cash`, `difference === 0`; zero `CashMovement` rows created; `getRegisterHistory().totals.vueltosEntregados` / `getAllRegisters()[0].totals.vueltosEntregados` equal `Σ changeAmount` excluding a cancelled overpaid sale in the same shift. All assertions pass.
 - [x] 4.3 Register both scripts in `tests/run-all.js` (`./integrity/caja-expected-with-change.test.js` after `./integrity/caja-open-index.test.js`; `./scenarios/cash-change.test.js` after `./scenarios/movement-validation.test.js`/concurrency group, before the discountEngine group).
 - [x] 4.4 **Update regression fixtures to supply `receivedAmount` on every cash leg**. Of the 6 listed, only 3 actually construct a cash leg through `salesServices.create()` and needed a change: `tests/scenarios/cancel-reverses-debt.test.js` (CASO 2), `tests/concurrency/sale-race.test.js`, `tests/concurrency/sale-vs-caja-close-race.test.js`. The other 3 — `tests/scenarios/cc-exact-payment.test.js` (only calls `currentAccountServices.registerPayment`, explicitly exempt per spec), `tests/scenarios/movement-validation.test.js` (only calls `movimientosServices.createMovement`/`cajaServices.closeRegister`, never `salesServices.create`), `tests/concurrency/caja-close-race.test.js` (only calls `cajaServices.closeRegister`) — never construct a cash leg at all and needed no change; confirmed by reading each file before touching anything. Assertions unchanged in all 3 modified files. `movement-validation.test.js`'s exact `expectedAmount === 1445.44` / `difference === 0` checks pass byte-identical (unmodified file, unmodified result) — confirms `closeRegister` is untouched.
-- [x] 4.5 Full `node tests/run-all.js` green, zero regressions. 28/28 scripts passed (26 pre-existing + 2 new).
+- [x] 4.5 Full `node tests/run-all.js` green, zero regressions. 24/24 scripts passed (22 pre-existing + 2 new) — corrected at verify time, an earlier note here mis-stated 28/28.
 
 ## Phase 5: Unit E — Frontend Input/Quick-Fill/Gate
 
-- [ ] 5.1 `DiscountSummaryModal.jsx` single mode: add `singleReceived` state; quick-fill prefills from **`finalTotal`, never `productsTotal`** (`productsTotal` is gross and ignores discounts — prefilling it would show an inflated/wrong change on any discounted sale); gate = `isCashMethod(singleMethod) ⇒ parseFloat(singleReceived) >= finalTotal`.
-- [ ] 5.2 Split mode: add `receivedAmount` per `splitBreakdown` entry; per-leg quick-fill from `p.amount`; gate = every cash leg `receivedAmount >= amount`.
-- [ ] 5.3 Fix `handleUpdatePayment` (~line 139-141) to spread-preserve existing fields — `{ ...p, method, amount }`, not `{ method, amount }`. Without this, `receivedAmount` is silently destroyed on any split-amount edit.
-- [ ] 5.4 Live "Vuelto" display per cash leg: `Math.max(0, received - amount)`, informational only — server's `change` is authoritative.
-- [ ] 5.5 Key the debounced `onPaymentChange` preview effect on a projected `{method, amount}`-only signature (not the full entry) so entering `receivedAmount` does not re-trigger the discount preview; confirm discount parity.
-- [ ] 5.6 Confirm action disabled while any cash leg is invalid, alongside existing `!isCovered`/`isProcessing` conditions; `handleConfirm`'s `baseAmount` weighting keeps deriving from net `amount`, untouched.
+Implemented in `stock-controll-main` (separate repo), PR #6 (`cash-change-calculation-e-frontend-input`, merged). Checkboxes below were left unticked during apply because the work landed in the other repo's git history, not this one — ticked now at verify time after confirming each item directly against the merged `DiscountSummaryModal.jsx`.
+
+- [x] 5.1 `DiscountSummaryModal.jsx` single mode: add `singleReceived` state; quick-fill prefills from **`finalTotal`, never `productsTotal`** (`productsTotal` is gross and ignores discounts — prefilling it would show an inflated/wrong change on any discounted sale); gate = `isCashMethod(singleMethod) ⇒ parseFloat(singleReceived) >= finalTotal`.
+- [x] 5.2 Split mode: add `receivedAmount` per `splitBreakdown` entry; per-leg quick-fill from `p.amount`; gate = every cash leg `receivedAmount >= amount`.
+- [x] 5.3 Fix `handleUpdatePayment` (~line 139-141) to spread-preserve existing fields — `{ ...p, method, amount }`, not `{ method, amount }`. Without this, `receivedAmount` is silently destroyed on any split-amount edit.
+- [x] 5.4 Live "Vuelto" display per cash leg: `Math.max(0, received - amount)`, informational only — server's `change` is authoritative.
+- [x] 5.5 Key the debounced `onPaymentChange` preview effect on a projected `{method, amount}`-only signature (not the full entry) so entering `receivedAmount` does not re-trigger the discount preview; confirm discount parity.
+- [x] 5.6 Confirm action disabled while any cash leg is invalid, alongside existing `!isCovered`/`isProcessing` conditions; `handleConfirm`'s `baseAmount` weighting keeps deriving from net `amount`, untouched.
 
 ## Phase 6: Unit F — Ticket + Arqueo Display
 
