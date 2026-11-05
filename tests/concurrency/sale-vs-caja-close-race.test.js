@@ -148,7 +148,7 @@ function saleData(product, qty = 1) {
   const cashAmount = toNumber(product.price) * qty;
   return {
     items: [{ id: product.id, quantity: qty }],
-    paymentBreakdown: [{ method: 'Efectivo', amount: cashAmount }],
+    paymentBreakdown: [{ method: 'Efectivo', amount: cashAmount, receivedAmount: cashAmount }],
     amount: cashAmount,
   };
 }

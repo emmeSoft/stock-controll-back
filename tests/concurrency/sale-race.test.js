@@ -148,7 +148,7 @@ async function main() {
     const authUser = { id: user.id, storeId: store.id, isSistema: false };
     const saleData = {
       items: [{ id: product.id, quantity: 1 }],
-      paymentBreakdown: [{ method: 'Efectivo', amount: 100 }],
+      paymentBreakdown: [{ method: 'Efectivo', amount: 100, receivedAmount: 100 }],
       amount: 100,
     };
 
