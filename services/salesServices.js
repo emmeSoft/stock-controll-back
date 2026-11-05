@@ -16,7 +16,7 @@ const cajaServices = require('./cajaServices');
 const discountService = require('./discountService');
 const { runUniversalPipeline, validatePaymentBreakdownAmounts } = require('./discountEngine/universal');
 const currentAccountServices = require('./currentAccountServices');
-const { money, round, toNumber, sum, D } = require('../utils/money');
+const { money, round, toNumber, sum, isPositiveAmount, D } = require('../utils/money');
 
 
 // ─────────────────────────────────────────────────────────────────
@@ -33,7 +33,6 @@ const { money, round, toNumber, sum, D } = require('../utils/money');
  *
  * ¿Por qué $0.50 de techo y no algo más chico? Esta misma función se usa en
  * 2 lugares con razones distintas para necesitar margen:
- * con razones distintas para necesitar margen:
  *  1. `validatePayments` (pago vs. total con descuentos ya aplicados):
  *     `discountService.mergeEngineResults` (ver nota en `create()`, sección
  *     post-motor-universal) todavía hace su aritmética de cascada con `number`
@@ -86,6 +85,44 @@ function validatePayments(paymentBreakdown, computedTotal) {
       `Diferencia: $${toNumber(totalPaid.minus(total).abs())} (tolerancia: $${toNumber(tolerance)}). ` +
       'Recalculá el total antes de confirmar.'
     );
+  }
+}
+
+/**
+ * Predicado de método de pago en efectivo, case-insensitive. NO agrega una
+ * normalización nueva (a diferencia de "Cuenta Corriente" → "CUENTA_CORRIENTE"
+ * más abajo): `paymentBreakdown[0].method` termina en `order.paymentMethod`,
+ * que se renderiza crudo en el frontend — normalizar "Efectivo" ahí afectaría
+ * la etiqueta de toda venta nueva y partiría la ortografía histórica de
+ * tickets viejos sin ningún beneficio real.
+ *
+ * @param {string} method
+ * @returns {boolean}
+ */
+const isCashMethod = (method) => String(method ?? '').trim().toLowerCase() === 'efectivo';
+
+/**
+ * Valida que cada pata en efectivo de `paymentBreakdown` declare un
+ * `receivedAmount` numérico, finito y estrictamente positivo — lo que el
+ * cliente entregó en mano. Corre SIEMPRE, ANTES de abrir la transacción,
+ * antes de cualquier aritmética Decimal sobre montos de pago.
+ *
+ * Las patas que NO son en efectivo (Tarjeta, Transferencia, Cuenta
+ * Corriente) se ignoran por completo acá: si llega un `receivedAmount` en
+ * una de esas patas, nunca se valida ni se usa — se descarta en silencio
+ * (la persistencia en PASO 8 hace lo mismo).
+ *
+ * @param {Array} paymentBreakdown — [{ method, amount, receivedAmount? }]
+ */
+function validateCashReceivedShape(paymentBreakdown) {
+  for (const leg of paymentBreakdown ?? []) {
+    if (!isCashMethod(leg.method)) continue;
+    if (!isPositiveAmount(leg.receivedAmount)) {
+      throw Object.assign(
+        new Error('Para un pago en efectivo debés ingresar el monto recibido del cliente.'),
+        { status: 400, code: 'CASH_RECEIVED_REQUIRED' }
+      );
+    }
   }
 }
 
@@ -157,6 +194,12 @@ const create = async (saleData, user) => {
       // Aseguramos que otros métodos comunes estén en un formato estándar si fuera necesario
     });
   }
+
+  // ── Validación de forma de los pagos en efectivo (vuelto) ──────
+  // Corre ANTES de la transacción — mismo criterio que
+  // `validatePaymentBreakdownAmounts` arriba: fallar rápido con un 400
+  // limpio antes de cualquier aritmética Decimal sobre paymentBreakdown.
+  validateCashReceivedShape(paymentBreakdown ?? []);
 
   // ── Validación de Cuenta Corriente ────────────────────────────
   // Si algún pago usa 'CUENTA_CORRIENTE', verificar elegibilidad ANTES de la tx.
@@ -435,6 +478,32 @@ const create = async (saleData, user) => {
       }
     }
 
+    // ── Vuelto: suficiencia (tolerancia CERO) + cálculo de cambio ──
+    // Recién acá `leg.amount` es confiable (validatePayments/la rama no-CC
+    // ya probaron arriba que las patas suman el total esperado) — antes de
+    // esto estaríamos comparando dos números del cliente entre sí. Esta
+    // comparación es independiente de la tolerancia de `paymentTolerance`
+    // usada arriba: el cliente entregó plata de más o de menos, sin margen.
+    for (const leg of paymentBreakdown) {
+      if (!isCashMethod(leg.method)) continue;
+
+      const legAmount = round(money(leg.amount));
+      const received = round(money(leg.receivedAmount));
+
+      if (received.lt(legAmount)) {
+        throw Object.assign(
+          new Error(
+            `El monto recibido en efectivo ($${toNumber(received)}) es insuficiente para cubrir ` +
+            `esta pata del pago ($${toNumber(legAmount)}).`
+          ),
+          { status: 400, code: 'CASH_RECEIVED_INSUFFICIENT' }
+        );
+      }
+
+      leg._changeAmount = round(received.minus(legAmount));
+      leg._receivedAmount = received;
+    }
+
     const paymentMethodSummary = hasCCPayment
       ? (paymentBreakdown.filter(p => p.method !== 'CUENTA_CORRIENTE').length > 0 ? 'COMBINADO' : 'CUENTA_CORRIENTE')
       : (paymentBreakdown.length > 1 ? 'COMBINADO' : paymentBreakdown[0].method);
@@ -474,12 +543,19 @@ const create = async (saleData, user) => {
 
 
     // ── PASO 8: Registrar OrderPayments ──────────────────────────
+    // `amount` sigue siendo el NETO aplicado a la venta, sin cambios.
+    // `receivedAmount`/`changeAmount` son columnas de auditoría al lado,
+    // nunca términos de ninguna fórmula de caja — null para patas no-efectivo
+    // (incluso si llegó un `receivedAmount` ahí, se ignora, nunca se persiste).
     for (const payment of paymentBreakdown) {
+      const isCash = isCashMethod(payment.method);
       await tx.orderPayment.create({
         data: {
           orderId: order.id,
           paymentMethod: payment.method,
           amount: payment.amount,
+          receivedAmount: isCash ? payment._receivedAmount : null,
+          changeAmount: isCash ? payment._changeAmount : null,
         },
       });
     }
@@ -621,9 +697,26 @@ const create = async (saleData, user) => {
     // (middlewares/decimalSerializer.js, Unit 2) convierte a Number en la
     // respuesta HTTP real. Los tests que llaman a create() directamente
     // deben usar `toNumber()` sobre estos campos.
+    //
+    // `change` y el `changeAmount`/`receivedAmount` de cada pata en efectivo
+    // usan los MISMOS nombres de clave que las columnas de OrderPayment
+    // (PASO 8), para que SaleDetail.jsx tenga un único camino de render
+    // tanto para este payload post-venta como para una orden releída de DB.
+    const totalChange = round(sum(paymentBreakdown, (p) => p._changeAmount));
+    const enrichedOrderPayments = paymentBreakdown.map((p) => {
+      const { _changeAmount, _receivedAmount, ...rest } = p;
+      const isCash = isCashMethod(p.method);
+      return {
+        ...rest,
+        receivedAmount: isCash ? _receivedAmount : null,
+        changeAmount: isCash ? _changeAmount : null,
+      };
+    });
+
     return {
       ...order,
-      orderPayments: paymentBreakdown,
+      orderPayments: enrichedOrderPayments,
+      change: totalChange,
       discountSummary: {
         originalTotal: round(computedSubtotal),
         discountTotal: round(discountTotal),
