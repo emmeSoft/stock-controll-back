@@ -1,5 +1,16 @@
 # Propuesta: Solución para Verificación de Pagos Combinados
 
+> **SUPERSEDED (2026-11-04)** — T1 below ("validación de suficiencia" in
+> `validatePayments`) was implemented ad-hoc outside this change's tracking
+> and is live in the current codebase (and its tolerance has since moved to
+> a fixed value). T2-T4's "gross-leg surplus adjustment" design was never
+> implemented and is superseded by the `cash-change-calculation` change,
+> which instead keeps the cash leg NET from the start (received amount
+> entered by the cashier, change computed and shown, never silently
+> adjusted) — see `openspec/changes/cash-change-calculation/proposal.md`
+> for the rejected-alternatives discussion. This folder is kept for
+> historical context only; do not implement T2-T4 as written here.
+
 ## Problema
 La validación de montos en el backend (`validatePayments`) es estrictamente nominal. Compara la suma de los medios de pago enviados por el frontend contra el total calculado por el motor de descuentos del backend. 
 
