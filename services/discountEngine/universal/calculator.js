@@ -83,16 +83,19 @@ function simulateMonetaryImpact(rule, item) {
  * @returns {Object} Item con descuento aplicado
  */
 function applyDiscount(item, rule, maxUnits) {
-  const conditions = rule.conditionsUniversal ?? {};
-  const { constraints } = conditions;
-
   const unitPrice = money(item.unitPrice);
   const quantity = item.quantity;
   const originalSubtotal = money(item.originalSubtotal ?? unitPrice.times(quantity));
   const percentage = rule.percentage ?? 0;
 
-  // Determinar cuántas unidades aplican al descuento
-  const limitUnits = constraints?.maxUnits ?? quantity;
+  // Determinar cuántas unidades aplican al descuento. `maxUnits` llega ya
+  // resuelto por el caller (evaluator.js): o el `constraints.maxUnits` crudo
+  // de la regla (sin pooling), o la cantidad ya repartida entre las líneas
+  // que ganaron esa misma regla (ver evaluateUniversal). Antes esta función
+  // ignoraba el parámetro y recalculaba `limitUnits` directamente desde
+  // `rule.conditionsUniversal.constraints.maxUnits`, lo que anulaba
+  // cualquier reparto hecho por el caller.
+  const limitUnits = typeof maxUnits === 'number' ? maxUnits : quantity;
   const discountableQuantity = Math.min(quantity, limitUnits);
 
   // Calcular monto de descuento solo sobre las unidades aplicables.

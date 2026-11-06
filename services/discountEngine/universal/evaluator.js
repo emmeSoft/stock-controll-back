@@ -272,8 +272,8 @@ function evaluateUniversal(context, rules) {
   // Calcular subtotal original
   const originalTotal = toNumber(sum(itemsWithSubtotal, (item) => item.originalSubtotal));
 
-  // Paso 3: Evaluar ITEM_LEVEL por cada item
-  const itemsWithDiscounts = itemsWithSubtotal.map(item => {
+  // Paso 3a: determinar qué regla gana por cada item (misma lógica que antes)
+  const itemRuleAssignments = itemsWithSubtotal.map(item => {
     // Filtrar reglas que aplican a este item
     const applicableItemRules = itemRules.filter(rule => {
       const impact = simulateMonetaryImpact(rule, item);
@@ -283,6 +283,39 @@ function evaluateUniversal(context, rules) {
     // Encontrar la mejor regla (mayor impacto monetario)
     const bestRule = findBestItemRule(applicableItemRules, item);
 
+    return { item, bestRule };
+  });
+
+  // Paso 3b: agrupar por regla ganadora y repartir constraints.maxUnits entre
+  // las líneas de carrito que ganaron esa MISMA regla, por precio unitario
+  // descendente (las unidades más caras se descuentan primero). Sin esto,
+  // cada línea ganadora recibía su propio cupo completo de unidades en vez
+  // de compartir un único cupo para toda la venta (ver nota en
+  // simulateMonetaryImpact: ese pooling quedaba explícitamente fuera de
+  // alcance ahí).
+  const allocatedUnitsByItem = new Map();
+  const groupsByRule = new Map();
+
+  for (const { item, bestRule } of itemRuleAssignments) {
+    const maxUnits = bestRule?.conditionsUniversal?.constraints?.maxUnits;
+    if (typeof maxUnits !== 'number') continue; // sin tope, nada que repartir
+    if (!groupsByRule.has(bestRule.id)) groupsByRule.set(bestRule.id, { maxUnits, items: [] });
+    groupsByRule.get(bestRule.id).items.push(item);
+  }
+
+  for (const { maxUnits, items: groupItems } of groupsByRule.values()) {
+    const sorted = [...groupItems].sort((a, b) => money(b.unitPrice).minus(a.unitPrice).toNumber());
+    let remaining = maxUnits;
+    for (const item of sorted) {
+      const allocated = Math.min(item.quantity, remaining);
+      allocatedUnitsByItem.set(item, allocated);
+      remaining -= allocated;
+    }
+  }
+
+  // Paso 3c: aplicar el descuento usando la cantidad repartida (las reglas
+  // sin constraints.maxUnits no se ven afectadas por este cambio)
+  const itemsWithDiscounts = itemRuleAssignments.map(({ item, bestRule }) => {
     if (!bestRule) {
       const originalSubtotal = item.originalSubtotal ?? toNumber(money(item.unitPrice).times(item.quantity));
       return {
@@ -295,9 +328,9 @@ function evaluateUniversal(context, rules) {
       };
     }
 
-    // Aplicar descuento
-    const conditions = bestRule.conditionsUniversal ?? {};
-    const maxUnits = conditions.constraints?.maxUnits;
+    const maxUnits = allocatedUnitsByItem.has(item)
+      ? allocatedUnitsByItem.get(item)
+      : bestRule.conditionsUniversal?.constraints?.maxUnits;
     return applyDiscount(item, bestRule, maxUnits);
   });
 

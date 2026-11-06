@@ -148,10 +148,42 @@ const caso4 = runUniversalPipeline(
   ]
 );
 
-// Nota: el comportamiento actual aplica maxUnits por item, no global.
-// Esto es una limitación conocida que puede mejorarse en futuro.
-assert(caso4.discountTotal > 0, 'hay descuento total positivo');
+// maxUnits se reparte entre las líneas que ganan la MISMA regla, por precio
+// unitario descendente: p2 ($2000) va primero y se lleva las 3 unidades del
+// cupo (50% × 3 × 2000 = 3000), p1 se queda sin cupo (0 unidades, $0).
+assert(caso4.discountTotal === 3000, 'discountTotal = 3000 (maxUnits repartido por precio, no por línea)');
 console.log('RESULTADO:', caso4);
+
+// ═══════════════════════════════════════════════════════════════
+// Caso A: maxUnits repartido entre dos líneas de precio distinto
+// ═══════════════════════════════════════════════════════════════
+console.log('\n--- Caso A: maxUnits repartido por precio entre dos notebooks ---');
+
+const casoA = runUniversalPipeline(
+  {
+    storeId: 'store-1',
+    items: [
+      { productId: 'notebook-caro', categoryId: 'cat-1', quantity: 1, unitPrice: 1500 },
+      { productId: 'notebook-barato', categoryId: 'cat-1', quantity: 1, unitPrice: 1000 },
+    ],
+  },
+  [
+    {
+      id: 'rA',
+      percentage: 10,
+      engineVersion: 'universal',
+      conditionsUniversal: {
+        target: { productIds: ['notebook-caro', 'notebook-barato'] },
+        constraints: { maxUnits: 1 },  // Solo 1 unidad con descuento en toda la venta
+      },
+    },
+  ]
+);
+
+// El cupo de 1 unidad se lo lleva el notebook más caro ($1500): 10% × 1500 = 150.
+// El notebook de $1000 se queda sin cupo (0 unidades, $0 de descuento).
+assert(casoA.discountTotal === 150, 'discountTotal = 150 (el notebook más caro se lleva el cupo)');
+console.log('RESULTADO:', casoA);
 
 // ═══════════════════════════════════════════════════════════════
 // CASO 5: Vigencia temporal (no vigente)
