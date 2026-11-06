@@ -35,6 +35,7 @@ const tests = [
   './integrity/caja-expected-with-change.test.js',
   './scenarios/cash-change.test.js',
   './discountEngine/engine-version-forced-universal.test.js',
+  './discountEngine/universal.test.js',
   './discountEngine/max-units-rule-selection.test.js',
   './discountEngine/payment-breakdown-proportion.test.js',
   './discountEngine/payment-breakdown-amount-validation.test.js',
