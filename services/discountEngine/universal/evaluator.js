@@ -304,7 +304,15 @@ function evaluateUniversal(context, rules) {
   }
 
   for (const { maxUnits, items: groupItems } of groupsByRule.values()) {
-    const sorted = [...groupItems].sort((a, b) => money(b.unitPrice).minus(a.unitPrice).toNumber());
+    // Desempate por productId cuando dos ítems comparten unitPrice: sin esto,
+    // el orden dependía del orden de envío del carrito — podía atribuir el
+    // descuento a un producto distinto entre el preview y la venta real si el
+    // carrito se reordenó en el medio, aunque el total cobrado sea idéntico.
+    const sorted = [...groupItems].sort((a, b) => {
+      const byPrice = money(b.unitPrice).minus(a.unitPrice).toNumber();
+      if (byPrice !== 0) return byPrice;
+      return String(a.productId).localeCompare(String(b.productId));
+    });
     let remaining = maxUnits;
     for (const item of sorted) {
       const allocated = Math.min(item.quantity, remaining);
