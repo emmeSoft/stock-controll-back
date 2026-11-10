@@ -15,6 +15,17 @@ const { money, round, toNumber, sum } = require('../../../utils/money');
 const GUARD_MIN_PRICE = 0.01;
 
 /**
+ * Resuelve cuántas unidades son descontables dado un `maxUnits` opcional.
+ * Si `maxUnits` no es un número, no hay tope y se usa `quantity` completa.
+ * @param {number} quantity - Cantidad del item
+ * @param {number|undefined} maxUnits - Tope de unidades (crudo o ya resuelto por el caller)
+ * @returns {number}
+ */
+function resolveDiscountableQuantity(quantity, maxUnits) {
+  return typeof maxUnits === 'number' ? Math.min(quantity, maxUnits) : quantity;
+}
+
+/**
  * Simula el impacto monetario de una regla sobre un item.
  * @param {Object} rule - Regla con conditionsUniversal
  * @param {Object} item - { productId, categoryId, quantity, unitPrice, originalSubtotal }
@@ -54,9 +65,7 @@ function simulateMonetaryImpact(rule, item) {
   // evaluator.js / applyDiscount) — ese es un issue separado, fuera de
   // alcance acá.
   const maxUnits = constraints?.maxUnits;
-  const discountableQuantity = (typeof maxUnits === 'number')
-    ? Math.min(item.quantity, maxUnits)
-    : item.quantity;
+  const discountableQuantity = resolveDiscountableQuantity(item.quantity, maxUnits);
 
   // Calcular descuento (item.originalSubtotal puede no existir aún).
   // item.unitPrice puede ser un Prisma.Decimal real (viene de product.price) o
@@ -95,8 +104,7 @@ function applyDiscount(item, rule, maxUnits) {
   // ignoraba el parámetro y recalculaba `limitUnits` directamente desde
   // `rule.conditionsUniversal.constraints.maxUnits`, lo que anulaba
   // cualquier reparto hecho por el caller.
-  const limitUnits = typeof maxUnits === 'number' ? maxUnits : quantity;
-  const discountableQuantity = Math.min(quantity, limitUnits);
+  const discountableQuantity = resolveDiscountableQuantity(quantity, maxUnits);
 
   // Calcular monto de descuento solo sobre las unidades aplicables.
   // AppliedDiscount.amount se redondea HALF_UP a 2 decimales (decisión de
