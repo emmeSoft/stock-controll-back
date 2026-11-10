@@ -24,7 +24,7 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
-const { validateTicketConditions } = require('../../services/discountEngine/universal/evaluator');
+const { validateTicketConditions, filterOrderRulesByTicketConditions } = require('../../services/discountEngine/universal/evaluator');
 
 function assert(condition, message) {
   if (!condition) {
@@ -102,6 +102,47 @@ assert(
   `es idéntico al cálculo real (${rule._matchingAmount}) — baseAmount no tuvo ningún efecto`
 );
 assert(ruleWithFakeBaseAmount._matchingAmount === 200, 'baseAmount fabricado no altera el resultado esperado (200)');
+
+// ═══════════════════════════════════════════════════════════════
+// CASO (c): 2 reglas ORDER con paymentMethods distintos comparten el
+// mismo context.paymentBreakdown vía filterOrderRulesByTicketConditions.
+// Cubre la optimización que cachea `totalPaid` una sola vez por request
+// (en vez de una vez por regla) — sin este caso, nada distinguía
+// "cacheado una sola vez" de "recalculado por regla" si esa lógica
+// llegara a desincronizarse entre reglas.
+// ═══════════════════════════════════════════════════════════════
+console.log('\n--- CASO (c): totalPaid cacheado entre 2 reglas, matchingAmount sigue siendo por-regla ---');
+
+const ruleCash = { id: 'rCash', allowPartial: true, conditionsUniversal: { ticketConditions: { paymentMethods: ['CASH'] } } };
+const ruleCard = { id: 'rCard', allowPartial: true, conditionsUniversal: { ticketConditions: { paymentMethods: ['CARD'] } } };
+const sharedContext = {
+  clientId: null,
+  orderSubtotal: 1000,
+  paymentBreakdown: [
+    { method: 'CASH', amount: 300 },
+    { method: 'CARD', amount: 700 },
+  ],
+};
+
+const filtered = filterOrderRulesByTicketConditions([ruleCash, ruleCard], sharedContext);
+
+// totalPagado = 1000 (compartido, cacheado una vez). Cada regla filtra su
+// propio medio de pago sobre ese mismo total: CASH → 300/1000*1000 = 300,
+// CARD → 700/1000*1000 = 700. Si el caché filtrara mal (p. ej. una regla
+// pisando el resultado de la otra), estos números no coincidirían.
+assert(filtered.length === 2, 'ambas reglas pasan el filtro (cada medio de pago tiene monto > 0 en el breakdown)');
+assert(ruleCash._matchingAmount === 300, `ruleCash._matchingAmount = 300 (obtuvo ${ruleCash._matchingAmount})`);
+assert(ruleCard._matchingAmount === 700, `ruleCard._matchingAmount = 700 (obtuvo ${ruleCard._matchingAmount})`);
+
+// Paridad: el mismo cálculo sin pasar por el camino cacheado (llamada
+// directa a validateTicketConditions, sin `precomputed`) tiene que dar
+// exactamente el mismo resultado que el camino cacheado de arriba.
+const ruleCashDirect = { allowPartial: true };
+validateTicketConditions({ paymentMethods: ['CASH'] }, sharedContext, ruleCashDirect);
+assert(
+  ruleCashDirect._matchingAmount === ruleCash._matchingAmount,
+  `resultado cacheado (${ruleCash._matchingAmount}) es idéntico al no cacheado (${ruleCashDirect._matchingAmount})`
+);
 
 console.log('\n========================================');
 console.log('✅ TODOS LOS TESTS DE paymentBreakdown PASARON');
