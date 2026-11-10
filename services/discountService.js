@@ -14,6 +14,7 @@ const prisma = require('../db/database.prisma.js');
 const { DEFAULT_PRIORITIES } = require('./discountEngine');
 const { runUniversalPipeline } = require('./discountEngine/universal');
 const { validateConditionsDual } = require('./discountEngine/validators');
+const { buildLegacyWarningLog, buildLegacyWarningMessage } = require('./discountEngine/legacyWarnings');
 const { money, round, toNumber, sum } = require('../utils/money');
 
 // ─────────────────────────────────────────────────────────────────
@@ -559,9 +560,7 @@ const preview = async (storeId, body) => {
   // producía un descuento $0 silencioso), pero lo señalamos para que no
   // sea invisible.
   if (legacyRules.length > 0) {
-    console.warn(
-      `[discountService.preview] ${legacyRules.length} regla(s) con engineVersion legacy/null ignoradas (motor legacy retirado). IDs: ${legacyRules.map(r => r.id).join(', ')}`
-    );
+    console.warn(buildLegacyWarningLog('[discountService.preview]', legacyRules));
   }
 
   // ── Ejecutar motor universal (SC-2.2) ─────────────────────────
@@ -589,7 +588,7 @@ const preview = async (storeId, body) => {
   if (legacyRules.length > 0) {
     result.warnings = [
       ...(result.warnings ?? []),
-      `${legacyRules.length} regla(s) de descuento con engineVersion legacy fueron ignoradas (motor legacy retirado; ejecutar backfill de datos).`,
+      buildLegacyWarningMessage(legacyRules),
     ];
   }
 

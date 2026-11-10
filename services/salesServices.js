@@ -15,6 +15,7 @@ const bcrypt = require('bcrypt');
 const cajaServices = require('./cajaServices');
 const discountService = require('./discountService');
 const { runUniversalPipeline, validatePaymentBreakdownAmounts } = require('./discountEngine/universal');
+const { buildLegacyWarningLog, buildLegacyWarningMessage } = require('./discountEngine/legacyWarnings');
 const currentAccountServices = require('./currentAccountServices');
 const { money, round, toNumber, sum, isPositiveAmount, D } = require('../utils/money');
 
@@ -335,9 +336,7 @@ const create = async (saleData, user) => {
     // motor universal (eso producía un descuento $0 silencioso), pero lo
     // señalamos para que no sea invisible.
     if (legacyRules.length > 0) {
-      console.warn(
-        `[salesServices] ${legacyRules.length} regla(s) con engineVersion legacy/null ignoradas (motor legacy retirado). IDs: ${legacyRules.map(r => r.id).join(', ')}`
-      );
+      console.warn(buildLegacyWarningLog('[salesServices]', legacyRules));
     }
 
     // Calcular originalTotal una sola vez desde precios de DB (Decimal, sin
@@ -376,7 +375,7 @@ const create = async (saleData, user) => {
     if (legacyRules.length > 0) {
       discountResult.warnings = [
         ...(discountResult.warnings ?? []),
-        `${legacyRules.length} regla(s) de descuento con engineVersion legacy fueron ignoradas (motor legacy retirado; ejecutar backfill de datos).`,
+        buildLegacyWarningMessage(legacyRules),
       ];
     }
 
