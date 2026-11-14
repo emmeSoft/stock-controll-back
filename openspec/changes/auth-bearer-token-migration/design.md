@@ -49,11 +49,13 @@ elevated op ────────> verifySudoMode(req): x-sudo-token ──> 
 | `controllers/authController.js` | Modify | Delete `buildCookieOptions` and every `res.cookie`; `login` returns `token` / `setupToken` in the body; `setupPassword` reads the Bearer header; `verifySudo` returns `sudoToken`; `logout` → `200 { message }` |
 | `middlewares/authMiddleware.js` | Modify | Delete the `req.cookies?.token` branch (header-only); reject tokens with a `purpose` claim |
 | `services/employeeServices.js` | Modify | `verifySudoMode(req)` verifies `x-sudo-token` (purpose + id binding); same thrown `Error`, same 4 call sites untouched |
-| `index.js` | Modify | Drop `cookieParser` require + `app.use`; CORS `credentials: true` removed; keep `trust proxy` |
+| `controllers/employeeController.js` | Modify | Remove 4 dangling `res.clearCookie('sudo')` calls — found by the grep gate, not anticipated here originally |
+| `index.js` | Modify | Drop `cookieParser` require + `app.use`; CORS `credentials: true` removed; keep `trust proxy`; guard `app.listen` behind `require.main === module` and `module.exports = app`, so the real app is importable for the CORS test below without a structural refactor |
 | `tests/auth/auth-token.test.js` | Create | Claims + expiry of both token kinds |
 | `tests/auth/auth-middleware.test.js` | Create | Fake req/res: valid header, missing, tampered, expired, `purpose`-carrying token |
 | `tests/auth/sudo-mode.test.js` | Create | `verifySudoMode` matrix (valid / missing / expired / wrong purpose / other user's token) + HIGH-004 ordering |
-| `tests/run-all.js` | Modify | Register the three files |
+| `tests/auth/cors-credentials.test.js` | Create | Real HTTP request (ephemeral port, real `app`) with an `Origin` header; asserts `Access-Control-Allow-Credentials` is absent. Closes the verify-phase CRITICAL gap — this scenario had no runtime test before. |
+| `tests/run-all.js` | Modify | Register the four files |
 | `openspec/config.yaml` | Modify | Testing block → `npm run test:integrity` |
 
 ## Interfaces
