@@ -3,16 +3,6 @@ const prisma = require('../db/database.prisma');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
-const buildCookieOptions = (maxAge) => ({
-  httpOnly: true,
-  // true en Render (HTTPS), false en localhost (HTTP)
-  secure: process.env.NODE_ENV === 'production', 
-  // none en Render (obligatorio para cross-site), lax en localhost
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', 
-  maxAge
-});
-
-
 const login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -21,19 +11,15 @@ const login = async (req, res) => {
 
     // Si requiere cambio de password
     if (result.requiresPasswordChange) {
-      res.cookie('token', result.setupToken, buildCookieOptions(10 * 60 * 1000));
-
       return res.json({
         message: result.message,
         requiresPasswordChange: true,
-        user: result.user
+        user: result.user,
+        setupToken: result.setupToken
       });
     }
 
-    // Setear la cookie
-    res.cookie('token', result.token, buildCookieOptions(60 * 60 * 1000));
-
-    res.json({ message: result.message, user: result.user });
+    res.json({ message: result.message, user: result.user, token: result.token });
   } catch (error) {
     res.status(401).json({ message: error.message });
   }
@@ -41,7 +27,8 @@ const login = async (req, res) => {
 
 const setupPassword = async (req, res) => {
   const { newPassword } = req.body;
-  const token = req.cookies?.token;
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
   if (!token) {
     return res.status(401).json({ message: 'La sesión de configuración expiró. Iniciá sesión nuevamente con un nuevo PIN.' });
@@ -64,11 +51,10 @@ const setupPassword = async (req, res) => {
 
     const result = await authServices.changeInitialPassword(decoded.id, newPassword.trim());
 
-    res.cookie('token', result.token, buildCookieOptions(60 * 60 * 1000));
-
     return res.json({
       message: result.message,
-      user: result.user
+      user: result.user,
+      token: result.token
     });
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
@@ -130,19 +116,13 @@ const verifySudo = async (req, res) => {
       return res.status(403).json({ message: "Contraseña incorrecta. Acceso Sudo denegado." });
     }
 
-    // Seteamos una cookie de 'sudo' que dura 2 minutos
-    res.cookie('sudo', 'true', buildCookieOptions(2 * 60 * 1000));
-
-    res.json({ message: "Sudo mode activado" });
+    res.json({ message: "Sudo mode activado", sudoToken: authServices.signSudoToken(adminId) });
   } catch (error) {
     res.status(500).json({ message: "Error en validación Sudo" });
   }
 };
 
 const logout = async (req, res) => {
-  const options = buildCookieOptions(0);
-  res.clearCookie('token', options);
-  res.clearCookie('sudo', options);
   res.json({ message: 'Sesión cerrada correctamente' });
 };
 

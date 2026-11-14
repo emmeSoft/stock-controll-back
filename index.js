@@ -3,13 +3,10 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const cookieParser = require('cookie-parser');
 const app = express();
 
-// Confiar en el proxy de Render para cookies seguras
+// Confiar en el proxy de Render (necesario para que express-rate-limit vea la IP real)
 app.set('trust proxy', 1);
-
-app.use(cookieParser());
 
 // Configuración de Orígenes Permitidos
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -82,8 +79,7 @@ app.use(cors({
     } else {
       callback(new Error('No permitido por la política de CORS de la aplicación'));
     }
-  },
-  credentials: true
+  }
 }));
 
 app.use(express.json());

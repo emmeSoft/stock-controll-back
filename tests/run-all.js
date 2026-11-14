@@ -16,6 +16,9 @@
  */
 
 const tests = [
+  './auth/auth-token.test.js',
+  './auth/auth-middleware.test.js',
+  './auth/sudo-mode.test.js',
   './money/money.test.js',
   './money/serializer.test.js',
   './money/excel-export.test.js',
