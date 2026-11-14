@@ -6,7 +6,6 @@ const createEmployee = async (req, res) => {
   const dataEmployee = req.body;
   try {
     const result = await employeeServices.create(dataEmployee, req.user);
-    res.clearCookie('sudo'); // Limpiar sudo tras éxito
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -39,7 +38,6 @@ const updateEmployee = async (req, res) => {
   const dataEmployee = req.body;
   try {
     const result = await employeeServices.update(id, dataEmployee, req.user);
-    res.clearCookie('sudo');
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -56,7 +54,6 @@ const toggleActiveStatus = async (req, res) => {
 
   try {
     const result = await employeeServices.setActiveStatus(id, isActive, req.user);
-    res.clearCookie('sudo'); // Limpiar sudo tras éxito
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -67,7 +64,6 @@ const resetPassword = async (req, res) => {
 
   try {
     const result = await employeeServices.resetPassword(id, req.user);
-    res.clearCookie('sudo'); // Limpiar sudo tras éxito
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error.message });

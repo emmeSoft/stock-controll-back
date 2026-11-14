@@ -1,12 +1,18 @@
 const prisma = require(`../db/database.prisma`);
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
+const { verifySudoToken } = require('./authServices');
 // Roles nuevos: SISTEMA, ADMINISTRADOR, ENCARGADO, VENDEDOR
 const ALLOWED_ROLES = ["SISTEMA", "ADMINISTRADOR", "ENCARGADO", "VENDEDOR"];
 const { isValidDni, normalizeDni, isValidEmail, normalizeEmail, normalizeCuit, isValidCuit, normalizeArPhone, isValidArPhone } = require("../utils/validators");
 
 const verifySudoMode = (req) => {
-    if (!req.cookies || req.cookies.sudo !== 'true') {
+    const token = req.headers?.['x-sudo-token'];
+    let decoded = null;
+    if (token) {
+        try { decoded = verifySudoToken(token); } catch (e) { decoded = null; }
+    }
+    if (!decoded || decoded.purpose !== 'sudo' || decoded.id !== req.user?.id) {
         throw new Error("Acción bloqueada. Se requiere validación reciente de contraseña (Sudo Mode).");
     }
     return true;
@@ -350,4 +356,4 @@ const resetPassword = async (employeeId, adminUser) => {
     };
 };
 
-module.exports = { create, getAll, getById, update, setActiveStatus, resetPassword };
+module.exports = { create, getAll, getById, update, setActiveStatus, resetPassword, verifySudoMode };

@@ -3,31 +3,31 @@ schema: spec-driven
 context: |
   Tech stack: Node.js + Express v5 + Prisma ORM + PostgreSQL
   Architecture: Layered (routes → controllers → services)
-  Testing: Manual node scripts (no test framework configured)
+  Testing: Plain-node house-style scripts via `tests/run-all.js` (no framework)
   Style: No linter/formatter configured
 
-strict_tdd: false
+strict_tdd: true
 
 testing:
   ## Testing Capabilities
-  **Strict TDD Mode**: disabled
-  **Detected**: 2026-04-29
-  
+  **Strict TDD Mode**: enabled
+  **Detected**: 2026-11-14
+
   ### Test Runner
-  - Command: —
-  - Framework: NOT FOUND
-  
+  - Command: `npm run test:integrity`
+  - Framework: None — plain `node`-executable scripts, local `assert()` helpers
+
   ### Test Layers
   | Layer | Available | Tool |
   |-------|-----------|------|
-  | Unit | ❌ | — |
-  | Integration | ❌ | — |
+  | Unit | ✅ | `tests/run-all.js` (pure/no-DB scripts) |
+  | Integration | ✅ | `tests/run-all.js` (DB-backed scripts, live `DATABASE_URL`) |
   | E2E | ❌ | — |
-  
+
   ### Coverage
   - Available: ❌
   - Command: —
-  
+
   ### Quality Tools
   | Tool | Available | Command |
   |------|-----------|---------|

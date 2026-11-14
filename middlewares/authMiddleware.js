@@ -2,10 +2,10 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../db/database.prisma');
 
 const authMiddleware = async (req, res, next) => {
-  // Intentar leer de cookies primero, luego de header como fallback
-  let token = req.cookies?.token;
+  // Header-only: Authorization: Bearer <jwt>. Sin fallback a cookies.
+  let token = null;
 
-  if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
     token = req.headers.authorization.split(' ')[1];
   }
 
@@ -16,7 +16,13 @@ const authMiddleware = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
+    // Un token con claim `purpose` (setup-password, sudo) no es un token de sesión:
+    // comparten el mismo slot de transporte, así que se rechaza acá antes de la DB.
+    if (decoded.purpose) {
+      return res.status(401).json({ message: 'Token inválido o expirado' });
+    }
+
     // Verificar en la DB si el usuario sigue activo
     const dbUser = await prisma.user.findUnique({
       where: { id: decoded.id },
