@@ -11,9 +11,10 @@
  */
 
 const prisma = require('../db/database.prisma.js');
-const { getLayer, DEFAULT_PRIORITIES } = require('./discountEngine');
+const { DEFAULT_PRIORITIES } = require('./discountEngine');
 const { runUniversalPipeline } = require('./discountEngine/universal');
 const { validateConditionsDual } = require('./discountEngine/validators');
+const { buildLegacyWarningLog, buildLegacyWarningMessage } = require('./discountEngine/legacyWarnings');
 const { money, round, toNumber, sum } = require('../utils/money');
 
 // ─────────────────────────────────────────────────────────────────
@@ -359,15 +360,10 @@ const create = async (body, user) => {
   const input = sanitizeRuleInput(body);
 
   // AXIOM-4: layer derivado del tipo de regla, nunca del request
-  // Para universales: se infiere del target (con target → ITEM, sin target → ORDER)
-  let layer;
-  if (input.engineVersion === 'universal') {
-    const target = input.conditionsUniversal?.target;
-    const hasTarget = target && (target.productIds?.length > 0 || target.categoryIds?.length > 0);
-    layer = hasTarget ? 'ITEM' : 'ORDER';
-  } else {
-    layer = getLayer(input.type); // legacy: del type
-  }
+  // Se infiere siempre del target universal (con target → ITEM, sin target → ORDER)
+  const target = input.conditionsUniversal?.target;
+  const hasTarget = target && (target.productIds?.length > 0 || target.categoryIds?.length > 0);
+  const layer = hasTarget ? 'ITEM' : 'ORDER';
 
   const rule = await prisma.discountRule.create({
     data: {
@@ -395,14 +391,9 @@ const update = async (id, body, user) => {
   const input = sanitizeRuleInput(body);
 
   // Mismo mecanismo de derivación de layer que en create (AXIOM-4)
-  let layer;
-  if (input.engineVersion === 'universal') {
-    const target = input.conditionsUniversal?.target;
-    const hasTarget = target && (target.productIds?.length > 0 || target.categoryIds?.length > 0);
-    layer = hasTarget ? 'ITEM' : 'ORDER';
-  } else {
-    layer = getLayer(input.type);
-  }
+  const target = input.conditionsUniversal?.target;
+  const hasTarget = target && (target.productIds?.length > 0 || target.categoryIds?.length > 0);
+  const layer = hasTarget ? 'ITEM' : 'ORDER';
 
   // Validar seguridad (tope de tienda)
   await validatePercentageAgainstCap(storeId, body.percentage);
@@ -569,9 +560,7 @@ const preview = async (storeId, body) => {
   // producía un descuento $0 silencioso), pero lo señalamos para que no
   // sea invisible.
   if (legacyRules.length > 0) {
-    console.warn(
-      `[discountService.preview] ${legacyRules.length} regla(s) con engineVersion legacy/null ignoradas (motor legacy retirado). IDs: ${legacyRules.map(r => r.id).join(', ')}`
-    );
+    console.warn(buildLegacyWarningLog('[discountService.preview]', legacyRules));
   }
 
   // ── Ejecutar motor universal (SC-2.2) ─────────────────────────
@@ -599,7 +588,7 @@ const preview = async (storeId, body) => {
   if (legacyRules.length > 0) {
     result.warnings = [
       ...(result.warnings ?? []),
-      `${legacyRules.length} regla(s) de descuento con engineVersion legacy fueron ignoradas (motor legacy retirado; ejecutar backfill de datos).`,
+      buildLegacyWarningMessage(legacyRules),
     ];
   }
 

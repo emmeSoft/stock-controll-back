@@ -130,9 +130,15 @@ function splitByLayer(rules) {
  * Valida las ticketConditions (condiciones globales de la orden).
  * @param {Object} ticketConditions - { paymentMethods, minAmount, allClients, clientIds }
  * @param {Object} context - { clientId, paymentMethods, orderSubtotal }
+ * @param {Object} [rule] - Regla evaluada (para guardar `_matchingAmount`)
+ * @param {Object} [precomputed] - { totalPaid? } ya calculado por el caller
+ *   (ver filterOrderRulesByTicketConditions) para evitar recalcularlo una
+ *   vez por regla cuando `context.paymentBreakdown` no cambia entre reglas.
+ *   Si no se provee (ej. llamadas directas desde tests), se calcula acá
+ *   igual que antes.
  * @returns {boolean} true si cumple las condiciones
  */
-function validateTicketConditions(ticketConditions, context, rule = {}) {
+function validateTicketConditions(ticketConditions, context, rule = {}, precomputed = {}) {
   if (!ticketConditions) return true;
 
   const { paymentMethods, minAmount, allClients, clientIds } = ticketConditions;
@@ -188,10 +194,15 @@ function validateTicketConditions(ticketConditions, context, rule = {}) {
       // desincronizarse si se renombraba una regla. Al no depender de eso,
       // renombrar una regla ya no puede alterar este cálculo.
       // Validar la forma de cada entrada ANTES de cualquier aritmética Decimal
-      // (ver docstring de validatePaymentBreakdownAmounts arriba).
-      validatePaymentBreakdownAmounts(context.paymentBreakdown);
-
-      const totalPaid = toNumber(sum(context.paymentBreakdown, (p) => p.amount));
+      // (ver docstring de validatePaymentBreakdownAmounts arriba). Si el
+      // caller ya lo hizo una sola vez para todas las reglas de este filtro
+      // (precomputed.totalPaid presente), reusamos ese resultado en vez de
+      // repetir la misma validación + suma por cada regla.
+      let totalPaid = precomputed.totalPaid;
+      if (totalPaid === undefined) {
+        validatePaymentBreakdownAmounts(context.paymentBreakdown);
+        totalPaid = toNumber(sum(context.paymentBreakdown, (p) => p.amount));
+      }
 
       if (totalPaid <= 0) return false;
 
@@ -234,14 +245,34 @@ function validateTicketConditions(ticketConditions, context, rule = {}) {
 
 /**
  * Evalúa las ticketConditions para cada regla ORDER.
+ *
+ * Optimización: `context.paymentBreakdown` es el mismo para todas las
+ * reglas de este filtro (no cambia entre iteraciones). Si al menos una
+ * regla tiene `ticketConditions.paymentMethods`, validamos la forma del
+ * breakdown y calculamos `totalPaid` UNA sola vez acá, en vez de repetir
+ * ese trabajo idéntico dentro de `validateTicketConditions` una vez por
+ * regla. Si ninguna regla lo necesita, no se hace ningún trabajo extra.
+ *
  * @param {Object[]} orderRules - Reglas ORDER_LEVEL
  * @param {Object} context - Contexto de evaluación
  * @returns {Object[]} Reglas ORDER que pasan las condiciones
  */
 function filterOrderRulesByTicketConditions(orderRules, context) {
+  let precomputed;
+  const needsPaymentBreakdownCheck = context.paymentBreakdown?.length > 0 &&
+    orderRules.some(rule => (rule.conditionsUniversal?.ticketConditions?.paymentMethods?.length ?? 0) > 0);
+
+  if (needsPaymentBreakdownCheck) {
+    // Misma validación + cálculo que antes hacía validateTicketConditions
+    // por cada regla; acá corre una sola vez porque el resultado es
+    // idéntico para todas (mismo context.paymentBreakdown).
+    validatePaymentBreakdownAmounts(context.paymentBreakdown);
+    precomputed = { totalPaid: toNumber(sum(context.paymentBreakdown, (p) => p.amount)) };
+  }
+
   return orderRules.filter(rule => {
     const conditions = rule.conditionsUniversal ?? {};
-    return validateTicketConditions(conditions.ticketConditions, context, rule);
+    return validateTicketConditions(conditions.ticketConditions, context, rule, precomputed);
   });
 }
 
