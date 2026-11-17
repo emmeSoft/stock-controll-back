@@ -109,6 +109,12 @@ model supplier {
   store          store    @relation(fields: [storeId], references: [id])
 }
 
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
 model order {
   id                     String                  @id @default(cuid())
   storeId                String
@@ -121,7 +127,7 @@ model order {
   amoutToPaid            Decimal                 @default(0) @db.Decimal(12, 2)
   discountTotal          Decimal?                @default(0) @db.Decimal(12, 2) // Suma total de descuentos aplicados
   paymentMethod          String?
-  status                 String                  @default("pending")
+  status                 OrderStatus             @default(PENDING)
   statusPayment          String?                 @default("pending")
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
