@@ -32,10 +32,12 @@ const verifySudoToken = (token) => jwt.verify(token, process.env.JWT_SECRET);
 const buildUserPayload = (user) => ({
   id: user.id,
   firstName: user.firstName,
+  lastName: user.lastName,
   email: user.email,
   role: user.rbacRole?.name || 'VENDEDOR',
   storeId: user.storeId,
   storeName: user.store?.name,
+  isFreeTier: user.store?.isFreeTier ?? true, // sin store (SISTEMA) -> irrelevante, el rol exime
   profilePicture: user.profilePicture
 });
 
@@ -121,4 +123,4 @@ const changeInitialPassword = async (userId, newPassword) => {
   };
 }
 
-module.exports = { loginUser, changeInitialPassword, signAuthToken, signSudoToken, verifySudoToken };
+module.exports = { loginUser, changeInitialPassword, signAuthToken, signSudoToken, verifySudoToken, buildUserPayload };
