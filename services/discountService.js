@@ -30,7 +30,7 @@ async function validatePercentageAgainstCap(storeId, percentage) {
     where: { id: storeId },
     select: { maxDiscountPct: true },
   });
-  const storeMax = storeConfig?.maxDiscountPct ?? 50;
+  const storeMax = storeConfig?.maxDiscountPct ?? 80;
 
   if (percentage > storeMax) {
     throw new Error(`Seguridad: No se puede crear un descuento (${percentage}%) que supere el tope de la tienda (${storeMax}%).`);
@@ -547,7 +547,7 @@ const preview = async (storeId, body) => {
   });
 
   // FILTRADO QUIRÚRGICO: Ignorar reglas que superen el tope máximo de la tienda (Axioma 12.2)
-  const storeMax = store?.maxDiscountPct ?? 50;
+  const storeMax = store?.maxDiscountPct ?? 80;
   const allRules = allRulesRaw.filter(r => (r.percentage ?? 0) <= storeMax);
 
   const { legacyRules, universalRules } = splitRulesByEngine(allRules);
