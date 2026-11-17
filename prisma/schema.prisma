@@ -85,6 +85,8 @@ model client {
   store          store           @relation(fields: [storeId], references: [id])
   orders         order[]
   currentAccount CurrentAccount?
+
+  @@unique([storeId, dni])
 }
 
 model supplier {
