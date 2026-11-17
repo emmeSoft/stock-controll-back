@@ -69,22 +69,14 @@ const checkAuth = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      include: { rbacRole: true }
+      include: { rbacRole: true, store: true }
     });
 
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    res.json({
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.rbacRole?.name || null,
-      storeId: user.storeId,
-      profilePicture: user.profilePicture
-    });
+    res.json(authServices.buildUserPayload(user));
   } catch (error) {
     res.status(500).json({ message: "Error al verificar sesión" });
   }

@@ -18,6 +18,7 @@ model store {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   maxDiscountPct  Float            @default(80) // Tope global de descuentos por tienda (%)
+  isFreeTier      Boolean          @default(true) // Señal de plan (no estado real de infra). Solo SISTEMA.
   cashMovements   CashMovement[]
   cashRegisters   CashRegister[]
   stockHistories  StockHistory[]

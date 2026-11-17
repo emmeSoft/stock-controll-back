@@ -45,6 +45,8 @@ const tests = [
   './discountEngine/payment-breakdown-amount-validation.test.js',
   './scenarios/sale-create-invalid-payment-amount.test.js',
   './scenarios/validate-payments-fixed-tolerance.test.js',
+  './tier/store-free-tier-gate.test.js',
+  './tier/health-endpoint.test.js',
 ];
 
 async function main() {

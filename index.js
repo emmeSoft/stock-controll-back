@@ -69,6 +69,7 @@ const stockHistoryRoutes = require('./routes/stockHistoryRoutes');
 const sellerPerformanceRoutes = require('./routes/sellerPerformanceRoutes');
 const discountRoutes        = require('./routes/discountRoutes');
 const currentAccountRoutes  = require('./routes/currentAccountRoutes');
+const healthRoutes          = require('./routes/healthRoutes');
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -84,6 +85,12 @@ app.use(cors({
 
 app.use(express.json());
 app.use(require('./middlewares/decimalSerializer')); // Decimal -> Number en todas las respuestas JSON
+
+// Wake endpoint: montado ANTES del limiter global a propósito. El wake-up
+// de un backend free-tier dormido no debe poder fallar por rate limit
+// (ver design.md "Decision: /api/health es montado antes del limiter").
+app.use('/api/health', healthRoutes);
+
 app.use(limiter); // Aplicar el limitador global
 
 // Rutas de autenticación con sus propios limitadores definidos en el router o aquí
