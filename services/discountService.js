@@ -544,6 +544,7 @@ const preview = async (storeId, body) => {
   // ── Fase 2: Filtrado y Separación por Engine (SC-2.1) ─────────
   const allRulesRaw = await prisma.discountRule.findMany({
     where: { storeId, isActive: true },
+    orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
   });
 
   // FILTRADO QUIRÚRGICO: Ignorar reglas que superen el tope máximo de la tienda (Axioma 12.2)

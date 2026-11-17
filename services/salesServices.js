@@ -326,6 +326,7 @@ const create = async (saleData, user) => {
     // Traer reglas de DB dentro de la tx para snapshot consistente.
     const allRules = await tx.discountRule.findMany({
       where: { storeId: effectiveStoreId, isActive: true },
+      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
     const { legacyRules, universalRules } = discountService.splitRulesByEngine(allRules);
 
