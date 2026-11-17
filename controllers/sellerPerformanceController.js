@@ -30,7 +30,7 @@ exports.getSellerPerformance = async (req, res) => {
     if (to)   dateFilter.lte = new Date(to);
 
     const whereClause = {
-      status: 'completed',
+      status: 'COMPLETED',
       ...(storeId && { storeId }),
       ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter }),
     };
@@ -114,7 +114,7 @@ exports.exportPerformance = async (req, res) => {
     if (to)   dateFilter.lte = new Date(to);
 
     const whereClause = {
-      status: 'completed',
+      status: 'COMPLETED',
       ...(storeId && { storeId }),
       ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter }),
     };

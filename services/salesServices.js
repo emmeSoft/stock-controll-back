@@ -523,7 +523,7 @@ const create = async (saleData, user) => {
         amoutToPaid: ccAmount,
         discountTotal: round(discountTotal),
         paymentMethod: paymentMethodSummary,
-        status: 'completed',
+        status: 'COMPLETED',
         statusPayment: orderStatusPayment,
         orderDetails: {
           create: cartItems.map(item => ({
