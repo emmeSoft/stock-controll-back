@@ -93,7 +93,7 @@ const update = async (id, dataStore, user) => {
     ];
 
     if (isSistema) {
-        allowedFields.push("maxDiscountPct");
+        allowedFields.push("maxDiscountPct", "isFreeTier");
     }
 
     const cleanData = Object.fromEntries(
@@ -101,6 +101,19 @@ const update = async (id, dataStore, user) => {
             ([key, value]) => allowedFields.includes(key) && value !== undefined
         )
     );
+
+    // DynamicForm envía strings; el whitelist es la frontera autoritativa, acá normalizamos.
+    // Un valor no reconocido (null, number, "TRUE", etc.) no se toca en vez de
+    // caer silenciosamente a false — evitar que un dato inesperado cambie el tier.
+    if (cleanData.isFreeTier !== undefined) {
+        if (cleanData.isFreeTier === true || cleanData.isFreeTier === "true") {
+            cleanData.isFreeTier = true;
+        } else if (cleanData.isFreeTier === false || cleanData.isFreeTier === "false") {
+            cleanData.isFreeTier = false;
+        } else {
+            delete cleanData.isFreeTier;
+        }
+    }
 
     const response = await prisma.store.update({
         where: { id: id },
