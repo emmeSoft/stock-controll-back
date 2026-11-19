@@ -97,7 +97,7 @@ async function main() {
         client: { connect: { id: client.id } },
         user:   { connect: { id: user.id } },
         amount: 1234.56,
-        status: 'completed',
+        status: 'COMPLETED',
       },
     });
     const order2 = await prisma.order.create({
@@ -106,7 +106,7 @@ async function main() {
         client: { connect: { id: client.id } },
         user:   { connect: { id: user.id } },
         amount: 789.12,
-        status: 'completed',
+        status: 'COMPLETED',
       },
     });
     orders = [order1, order2];
