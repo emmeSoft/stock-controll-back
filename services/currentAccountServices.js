@@ -44,6 +44,17 @@ async function requireOpenAccount(clientId, storeId) {
   return account;
 }
 
+/**
+ * Describe el movimiento de una venta que generó deuda en cuenta corriente.
+ * Si no hubo pago en el momento (paidAmount === 0), no habla de "pago
+ * parcial" — no hubo ningún pago, parcial o no.
+ */
+function buildSaleDebtDescription(paidAmount, debtAmount) {
+  return toNumber(paidAmount) > 0
+    ? `Venta — Pago parcial $${toNumber(paidAmount)} — Cargo $${toNumber(debtAmount)}`
+    : `Venta a cuenta corriente — Cargo $${toNumber(debtAmount)}`;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // open
 // ─────────────────────────────────────────────────────────────────
@@ -418,7 +429,7 @@ const addSaleDebt = async (tx, { orderId, clientId, storeId, userId, totalAmount
       debtAmount,
       balanceAfter,
       order:          { connect: { id: orderId } },
-      description:    `Venta — Pago parcial $${toNumber(paidAmount)} — Cargo $${toNumber(debtAmount)}`,
+      description:    buildSaleDebtDescription(paidAmount, debtAmount),
     },
   });
 
@@ -437,4 +448,5 @@ module.exports = {
   getDetail,
   registerPayment,
   addSaleDebt,       // solo para uso interno desde salesServices
+  buildSaleDebtDescription, // exportado solo para test unitario puro
 };
