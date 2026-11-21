@@ -59,7 +59,7 @@ const exportSales = async (req, res) => {
       { header: 'Subtotal', key: 'subtotal', width: 15 },
       { header: 'Descuento', key: 'discount', width: 15 },
       { header: 'Total', key: 'amount', width: 15 },
-      { header: 'Medodo de Pago', key: 'paymentMethod', width: 15 },
+      { header: 'Método de Pago', key: 'paymentMethod', width: 15 },
       { header: 'Estado', key: 'status', width: 15 }
     ];
 
@@ -85,7 +85,12 @@ const exportSales = async (req, res) => {
       filename: `ventas_${new Date().toISOString().split('T')[0]}.xlsx`,
       worksheetName: 'Ventas',
       columns,
-      data
+      data,
+      // Las ventas anuladas se muestran (no se excluyen), pero en rojo y
+      // tachadas para que no se confundan al sumar la columna Total a mano.
+      rowStyle: (row) => row.status === 'CANCELLED'
+        ? { font: { color: { argb: 'FFFF0000' }, strike: true } }
+        : null
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

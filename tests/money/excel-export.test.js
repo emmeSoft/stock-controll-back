@@ -154,6 +154,84 @@ async function main() {
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // CASO 3: columna con `numFmt` guarda un número real (no un string con
+  // "%" pegado) y lo expone con el formato de Excel, como en el export de
+  // desempeño de vendedores ("% Participación").
+  // ═══════════════════════════════════════════════════════════════
+  console.log('\n--- CASO 3: columna numFmt guarda número, no string "45.23%" ---');
+
+  {
+    const data = [{ name: 'Vendedor A', percentage: 0.4523 }];
+
+    const res = createBufferingRes();
+    await excelService.generateExcel({
+      res,
+      filename: 'test.xlsx',
+      worksheetName: 'Test',
+      columns: [
+        { header: 'Vendedor', key: 'name', width: 20 },
+        { header: '% Participación', key: 'percentage', width: 15, numFmt: '0.00%' },
+      ],
+      data,
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.getBuffer());
+    const worksheet = workbook.getWorksheet('Test');
+    const dataRow = worksheet.getRow(2);
+    const percentageCell = dataRow.getCell(2);
+
+    assert(
+      typeof percentageCell.value === 'number',
+      `percentage cell is typeof number, not a "${'%'}"-suffixed string (visto: ${typeof percentageCell.value}, valor: ${JSON.stringify(percentageCell.value)})`
+    );
+    assert(percentageCell.value === 0.4523, `percentage cell equals the raw fraction 0.4523 (visto: ${percentageCell.value})`);
+    assert(percentageCell.numFmt === '0.00%', `percentage cell carries the column's numFmt (visto: ${percentageCell.numFmt})`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // CASO 4: `rowStyle` tiñe de rojo y tacha una fila específica (p. ej. una
+  // venta anulada en el export de ventas), sin tocar el resto de las filas.
+  // ═══════════════════════════════════════════════════════════════
+  console.log('\n--- CASO 4: rowStyle marca en rojo y tachado solo la fila indicada ---');
+
+  {
+    const data = [
+      { id: 'OK001', status: 'COMPLETED' },
+      { id: 'CANC01', status: 'CANCELLED' },
+    ];
+
+    const res = createBufferingRes();
+    await excelService.generateExcel({
+      res,
+      filename: 'test.xlsx',
+      worksheetName: 'Test',
+      columns: [
+        { header: 'ID', key: 'id', width: 10 },
+        { header: 'Estado', key: 'status', width: 15 },
+      ],
+      data,
+      rowStyle: (row) => row.status === 'CANCELLED'
+        ? { font: { color: { argb: 'FFFF0000' }, strike: true } }
+        : null,
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.getBuffer());
+    const worksheet = workbook.getWorksheet('Test');
+
+    const okRow = worksheet.getRow(2);
+    const cancelledRow = worksheet.getRow(3);
+
+    assert(!okRow.font.strike, 'la fila COMPLETED no queda tachada');
+    assert(cancelledRow.font.strike === true, 'la fila CANCELLED queda tachada');
+    assert(
+      cancelledRow.font.color?.argb === 'FFFF0000',
+      `la fila CANCELLED queda en rojo (visto: ${JSON.stringify(cancelledRow.font.color)})`
+    );
+  }
+
   if (process.exitCode === 1) {
     console.error('\n❌ Algunas aserciones de excel-export.test.js fallaron.');
     process.exit(1);
