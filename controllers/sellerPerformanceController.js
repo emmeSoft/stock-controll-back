@@ -165,7 +165,7 @@ exports.exportPerformance = async (req, res) => {
       { header: 'Rol', key: 'role', width: 20 },
       { header: 'Cant. Ventas', key: 'salesCount', width: 15 },
       { header: 'Total Recaudado', key: 'totalAmount', width: 20 },
-      { header: '% Participación', key: 'percentage', width: 15 }
+      { header: '% Participación', key: 'percentage', width: 15, numFmt: '0.00%' }
     ];
 
     const data = sellers.map(s => ({
@@ -176,7 +176,10 @@ exports.exportPerformance = async (req, res) => {
       // aggregate (_sum.amount), still Decimal — Excel export bypasses the
       // res.json serializer, so unwrap it explicitly.
       totalAmount: toNumber(s.totalAmount),
-      percentage: `${s.percentage}%`
+      // Número real (fracción 0-1), no string — el numFmt '0.00%' de la
+      // columna multiplica x100 y agrega el "%" al mostrarlo en Excel, y
+      // así queda sumable/ordenable en vez de ser texto.
+      percentage: s.percentage / 100
     }));
 
     await excelService.generateExcel({
