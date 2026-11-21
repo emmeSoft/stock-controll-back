@@ -7,10 +7,14 @@ const ExcelJS = require('exceljs');
  * @param {import('express').Response} options.res - Express response object
  * @param {string} options.filename - Name of the file (e.g. 'ventas.xlsx')
  * @param {string} options.worksheetName - Name of the sheet
- * @param {Array} options.columns - Array of { header: string, key: string, width: number }
+ * @param {Array} options.columns - Array of { header: string, key: string, width: number, numFmt?: string }
  * @param {Array} options.data - Array of data objects
+ * @param {(row: Object, index: number) => ({ font?: Object }|null)} [options.rowStyle] -
+ *   Optional per-row style override. Called with the original data item (not the
+ *   ExcelJS row) and its index; return `{ font: {...} }` to merge into that row's
+ *   font (e.g. `{ color: { argb: 'FFFF0000' }, strike: true }` for a cancelled row).
  */
-async function generateExcel({ res, filename, worksheetName, columns, data }) {
+async function generateExcel({ res, filename, worksheetName, columns, data, rowStyle }) {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet(worksheetName);
 
@@ -18,7 +22,8 @@ async function generateExcel({ res, filename, worksheetName, columns, data }) {
   worksheet.columns = columns.map(col => ({
     header: col.header,
     key: col.key,
-    width: col.width || 20
+    width: col.width || 20,
+    style: col.numFmt ? { numFmt: col.numFmt } : undefined
   }));
 
   // Style the header row
@@ -64,6 +69,10 @@ async function generateExcel({ res, filename, worksheetName, columns, data }) {
 
     if (rowNumber > 1) {
       row.font = { name: 'Arial', size: 10 };
+      const override = typeof rowStyle === 'function' ? rowStyle(data[rowNumber - 2], rowNumber - 2) : null;
+      if (override?.font) {
+        row.font = { ...row.font, ...override.font };
+      }
     }
   });
 
