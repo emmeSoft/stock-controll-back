@@ -48,6 +48,7 @@ const tests = [
   './scenarios/validate-payments-fixed-tolerance.test.js',
   './tier/store-free-tier-gate.test.js',
   './tier/health-endpoint.test.js',
+  './tier/store-max-discount-pct.test.js',
 ];
 
 async function main() {
