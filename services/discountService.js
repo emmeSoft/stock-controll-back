@@ -581,7 +581,7 @@ const preview = async (storeId, body) => {
     universalResult,
     originalTotal,
     allRules,
-    store?.maxDiscountPct ?? 50,
+    storeMax,
     preferredRuleIds,
     excludedRuleIds // Pasamos las exclusiones al unificador
   );
