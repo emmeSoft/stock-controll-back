@@ -2,6 +2,18 @@ const salesServices = require('../services/salesServices');
 const excelService = require('../services/excelService');
 const { toNumber } = require('../utils/money');
 
+// `order.paymentMethod` guarda una mezcla deliberada de estilos: "Efectivo"/
+// "Tarjeta"/"Transferencia" (como las manda el frontend) junto con las
+// constantes internas "CUENTA_CORRIENTE"/"COMBINADO" (ver nota en
+// salesServices.js sobre por qué NO se normaliza ese campo en el dato
+// guardado: rompería tickets viejos sin beneficio real). Esta traducción es
+// solo para la columna del Excel, no toca el valor persistido.
+const PAYMENT_METHOD_EXCEL_LABELS = {
+  CUENTA_CORRIENTE: 'Cuenta Corriente',
+  COMBINADO: 'Combinado',
+};
+const toExcelPaymentMethodLabel = (method) => PAYMENT_METHOD_EXCEL_LABELS[method] ?? method;
+
 const createSale = async (req, res) => {
   try {
     const saleData = req.body;
@@ -76,7 +88,7 @@ const exportSales = async (req, res) => {
       subtotal: toNumber(sale.amount) + toNumber(sale.discountTotal),
       discount: toNumber(sale.discountTotal),
       amount: toNumber(sale.amount),
-      paymentMethod: sale.paymentMethod,
+      paymentMethod: toExcelPaymentMethodLabel(sale.paymentMethod),
       status: sale.status
     }));
 
@@ -115,5 +127,5 @@ const cancelSale = async (req, res) => {
   }
 };
 
-module.exports = { createSale, getAllSales, getSaleById, exportSales, cancelSale };
+module.exports = { createSale, getAllSales, getSaleById, exportSales, cancelSale, toExcelPaymentMethodLabel };
 
