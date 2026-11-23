@@ -102,6 +102,20 @@ const update = async (id, dataStore, user) => {
         )
     );
 
+    // DynamicForm/EntityDetailsForm mandan siempre string (el input es type="text").
+    // El schema espera Float — sin esta coerción, Prisma tira PrismaClientValidationError
+    // y storesController la devuelve como 403, como si fuera un problema de permisos.
+    if (cleanData.maxDiscountPct !== undefined) {
+        const parsed = Number(cleanData.maxDiscountPct);
+        if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100) {
+            throw Object.assign(
+                new Error("maxDiscountPct debe ser un número entre 1 y 100."),
+                { status: 400, code: "INVALID_MAX_DISCOUNT_PCT" }
+            );
+        }
+        cleanData.maxDiscountPct = parsed;
+    }
+
     // DynamicForm envía strings; el whitelist es la frontera autoritativa, acá normalizamos.
     // Un valor no reconocido (null, number, "TRUE", etc.) no se toca en vez de
     // caer silenciosamente a false — evitar que un dato inesperado cambie el tier.

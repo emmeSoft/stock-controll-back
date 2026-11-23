@@ -34,7 +34,10 @@ const updateStore = async (req, res) => {
     const result = await storesServices.update(id, req.body, req.user);
     res.json(result);
   } catch (error) {
-    res.status(403).json({ message: error.message });
+    // 403 sigue siendo el default (el caso real de "no sos SISTEMA/ADMIN de
+    // esta tienda"), pero un error con su propio status (ej. 400 de validación
+    // de maxDiscountPct) ya no queda disfrazado de problema de permisos.
+    res.status(error.status || 403).json({ message: error.message });
   }
 };
 
