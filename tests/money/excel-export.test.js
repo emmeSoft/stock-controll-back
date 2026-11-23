@@ -40,6 +40,7 @@ const { Prisma } = require('@prisma/client');
 const ExcelJS = require('exceljs');
 const excelService = require('../../services/excelService');
 const { toNumber } = require('../../utils/money');
+const { toExcelPaymentMethodLabel } = require('../../controllers/salesController');
 
 function assert(condition, message) {
   if (!condition) {
@@ -229,6 +230,34 @@ async function main() {
     assert(
       cancelledRow.font.color?.argb === 'FFFF0000',
       `la fila CANCELLED queda en rojo (visto: ${JSON.stringify(cancelledRow.font.color)})`
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // CASO 5: la columna "Método de Pago" del Excel de ventas traduce las
+  // constantes internas (CUENTA_CORRIENTE, COMBINADO) a texto legible, sin
+  // tocar los valores que ya vienen en español (Efectivo, Tarjeta, etc.)
+  // de order.paymentMethod — ese campo no se normaliza (ver nota en
+  // salesController.js y salesServices.js).
+  // ═══════════════════════════════════════════════════════════════
+  console.log('\n--- CASO 5: traducción de método de pago solo para el Excel ---');
+
+  {
+    assert(
+      toExcelPaymentMethodLabel('CUENTA_CORRIENTE') === 'Cuenta Corriente',
+      'CUENTA_CORRIENTE -> "Cuenta Corriente"'
+    );
+    assert(
+      toExcelPaymentMethodLabel('COMBINADO') === 'Combinado',
+      'COMBINADO -> "Combinado"'
+    );
+    assert(
+      toExcelPaymentMethodLabel('Efectivo') === 'Efectivo',
+      'Efectivo (ya legible) queda intacto'
+    );
+    assert(
+      toExcelPaymentMethodLabel('Tarjeta') === 'Tarjeta',
+      'Tarjeta (ya legible) queda intacto'
     );
   }
 
